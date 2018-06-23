@@ -11,7 +11,11 @@ import (
 
 // An EventStream is a uni-directional channel of events
 // that are passed through an EventLoop.
+//
+// It is only safe to use an EventStream on one EventLoop
+// at once.
 type EventStream struct {
+	loop    *EventLoop
 	pending []interface{}
 }
 
@@ -61,15 +65,11 @@ func (h *Handle) Poll(streams ...*EventStream) *Event {
 	return <-ch
 }
 
-// Time gets the current virtual time.
-func (h *Handle) Time() float64 {
-	h.lock.Lock()
-	defer h.lock.Unlock()
-	return h.time
-}
-
 // Schedule creates a Timer for delivering an event.
 func (h *Handle) Schedule(stream *EventStream, msg interface{}, delay float64) *Timer {
+	if stream.loop != h.EventLoop {
+		panic("EventStream is not associated with the correct EventLoop")
+	}
 	var timer *Timer
 	h.modify(func() {
 		timer = &Timer{
@@ -92,6 +92,14 @@ func (h *Handle) Reschedule(t *Timer, deadline float64) {
 	h.modify(func() {
 		t.time = deadline
 	})
+}
+
+// Sleep waits for a certain amount of virtual time to
+// elapse.
+func (h *Handle) Sleep(delay float64) {
+	stream := h.Stream()
+	h.Schedule(stream, nil, delay)
+	h.Poll(stream)
 }
 
 // An EventLoop is a global scheduler for events in a
@@ -122,6 +130,11 @@ func NewEventLoop() *EventLoop {
 	return &EventLoop{notifyCh: make(chan struct{}, 1)}
 }
 
+// Stream creates a new EventStream.
+func (e *EventLoop) Stream() *EventStream {
+	return &EventStream{loop: e}
+}
+
 // Go runs a function in a Goroutine and passes it a new
 // handle to the EventLoop.
 func (e *EventLoop) Go(f func(h *Handle)) {
@@ -131,15 +144,15 @@ func (e *EventLoop) Go(f func(h *Handle)) {
 	e.lock.Unlock()
 	go func() {
 		f(h)
-		e.lock.Lock()
-		defer e.lock.Unlock()
-		for i, handle := range e.handles {
-			if handle == h {
-				essentials.UnorderedDelete(e.handles, i)
-				return
+		e.modify(func() {
+			for i, handle := range e.handles {
+				if handle == h {
+					essentials.UnorderedDelete(&e.handles, i)
+					return
+				}
 			}
-		}
-		panic("cannot free handle that does not exist")
+			panic("cannot free handle that does not exist")
+		})
 	}()
 }
 
@@ -174,6 +187,13 @@ func (e *EventLoop) Run() error {
 	panic("unreachable")
 }
 
+// Time gets the current virtual time.
+func (e *EventLoop) Time() float64 {
+	e.lock.Lock()
+	defer e.lock.Unlock()
+	return e.time
+}
+
 // modify calls a function f() such that f can safely
 // change the loop state.
 func (e *EventLoop) modify(f func()) {
@@ -198,38 +218,42 @@ func (e *EventLoop) step() (bool, error) {
 	e.lock.Lock()
 	defer e.lock.Unlock()
 
+	if len(e.handles) == 0 {
+		return false, nil
+	}
+
 	for _, h := range e.handles {
 		if len(h.pollStreams) == 0 {
 			// Do not run the loop while a Goroutine is
 			// doing work in real-time.
-			return false, nil
+			return true, nil
 		}
 	}
 
-	if len(e.timers) == 0 {
-		return false, errors.New("deadlock: all Handles are polling")
-	}
+	for len(e.timers) > 0 {
+		// Shuffle so that two timers with the same deadline
+		// don't execute in a deterministic order.
+		indices := rand.Perm(len(e.timers))
 
-	// Shuffle so that two timers with the same deadline
-	// don't execute in a deterministic order.
-	indices := rand.Perm(len(e.timers))
+		minTimerIdx := indices[0]
+		for _, i := range indices[1:] {
+			if e.timers[i].time < e.timers[minTimerIdx].time {
+				minTimerIdx = i
+			}
+		}
+		timer := e.timers[minTimerIdx]
 
-	minTimerIdx := indices[0]
-	for _, i := range indices[1:] {
-		if e.timers[i].time < e.timers[minTimerIdx].time {
-			minTimerIdx = i
+		essentials.UnorderedDelete(&e.timers, minTimerIdx)
+		e.time = math.Max(e.time, timer.time)
+		if e.deliver(timer.event) {
+			return true, nil
 		}
 	}
-	timer := e.timers[minTimerIdx]
 
-	essentials.UnorderedDelete(e.timers, minTimerIdx)
-	e.time = math.Max(e.time, timer.time)
-	e.deliver(timer.event)
-
-	return true, nil
+	return false, errors.New("deadlock: all Handles are polling")
 }
 
-func (e *EventLoop) deliver(event *Event) {
+func (e *EventLoop) deliver(event *Event) bool {
 	// Shuffle the handles so that two receivers don't get
 	// messages in a deterministic order.
 	indices := rand.Perm(len(e.handles))
@@ -240,9 +264,10 @@ func (e *EventLoop) deliver(event *Event) {
 				h.pollChan <- event
 				h.pollChan = nil
 				h.pollStreams = nil
-				return
+				return true
 			}
 		}
 	}
 	event.Stream.pending = append(event.Stream.pending, event.Message)
+	return false
 }
