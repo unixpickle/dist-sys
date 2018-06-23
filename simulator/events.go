@@ -1,0 +1,248 @@
+package simulator
+
+import (
+	"errors"
+	"math"
+	"math/rand"
+	"sync"
+
+	"github.com/unixpickle/essentials"
+)
+
+// An EventStream is a uni-directional channel of events
+// that are passed through an EventLoop.
+type EventStream struct {
+	pending []interface{}
+}
+
+// An Event is a message received on some EventStream.
+type Event struct {
+	Message interface{}
+	Stream  *EventStream
+}
+
+// A Timer controls the delayed delivery of an event.
+// In particular, a Timer represents a single send that
+// will happen in the (virtual) future.
+type Timer struct {
+	time  float64
+	event *Event
+}
+
+// A Handle is a Goroutine's mechanism for accessing an
+// EventLoop. Goroutines should not share Handles.
+type Handle struct {
+	*EventLoop
+
+	// These fields are empty when the Goroutine is
+	// not polling on any streams.
+	pollStreams []*EventStream
+	pollChan    chan<- *Event
+}
+
+// Poll waits for the next event from a set of streams.
+func (h *Handle) Poll(streams ...*EventStream) *Event {
+	ch := make(chan *Event, 1)
+	h.modify(func() {
+		if h.pollStreams != nil {
+			panic("Handle is shared between Goroutines")
+		}
+		for _, stream := range streams {
+			if len(stream.pending) > 0 {
+				msg := stream.pending[0]
+				essentials.OrderedDelete(&stream.pending, 0)
+				ch <- &Event{Message: msg, Stream: stream}
+				return
+			}
+		}
+		h.pollStreams = streams
+		h.pollChan = ch
+	})
+	return <-ch
+}
+
+// Time gets the current virtual time.
+func (h *Handle) Time() float64 {
+	h.lock.Lock()
+	defer h.lock.Unlock()
+	return h.time
+}
+
+// Schedule creates a Timer for delivering an event.
+func (h *Handle) Schedule(stream *EventStream, msg interface{}, delay float64) *Timer {
+	var timer *Timer
+	h.modify(func() {
+		timer = &Timer{
+			time:  h.time + delay,
+			event: &Event{Message: msg, Stream: stream},
+		}
+		h.timers = append(h.timers, timer)
+	})
+	return timer
+}
+
+// Reschedule changes the deadline for an existing timer.
+//
+// The deadline is measured in absolute virtual time.
+// This is different than Schedule(), which takes a delay
+// from the current virtual time.
+//
+// If the timer is not scheduled, this has no effect.
+func (h *Handle) Reschedule(t *Timer, deadline float64) {
+	h.modify(func() {
+		t.time = deadline
+	})
+}
+
+// An EventLoop is a global scheduler for events in a
+// simulated distributed system.
+//
+// All Goroutines which access an EventLoop should be
+// started using the EventLoop.Go() method.
+//
+// The event loop will only run when all active Goroutines
+// are polling for an event.
+// This way, simulated machines don't have to worry about
+// real timing while performing computations.
+type EventLoop struct {
+	lock    sync.Mutex
+	timers  []*Timer
+	handles []*Handle
+
+	time float64
+
+	running  bool
+	notifyCh chan struct{}
+}
+
+// NewEventLoop creates an event loop.
+//
+// The event loop's clock starts at 0.
+func NewEventLoop() *EventLoop {
+	return &EventLoop{notifyCh: make(chan struct{}, 1)}
+}
+
+// Go runs a function in a Goroutine and passes it a new
+// handle to the EventLoop.
+func (e *EventLoop) Go(f func(h *Handle)) {
+	h := &Handle{EventLoop: e}
+	e.lock.Lock()
+	e.handles = append(e.handles, h)
+	e.lock.Unlock()
+	go func() {
+		f(h)
+		e.lock.Lock()
+		defer e.lock.Unlock()
+		for i, handle := range e.handles {
+			if handle == h {
+				essentials.UnorderedDelete(e.handles, i)
+				return
+			}
+		}
+		panic("cannot free handle that does not exist")
+	}()
+}
+
+// Run runs the loop and blocks until all handles have
+// been closed.
+//
+// It is not safe to run the loop from more than one
+// Goroutine at once.
+//
+// Returns with an error if there is a deadlock.
+func (e *EventLoop) Run() error {
+	e.lock.Lock()
+	if e.running {
+		e.lock.Unlock()
+		panic("EventLoop is already running.")
+	}
+	e.running = true
+	e.lock.Unlock()
+
+	defer func() {
+		e.lock.Lock()
+		e.running = false
+		e.lock.Unlock()
+	}()
+
+	for _ = range e.notifyCh {
+		if shouldContinue, err := e.step(); !shouldContinue {
+			return err
+		}
+	}
+
+	panic("unreachable")
+}
+
+// modify calls a function f() such that f can safely
+// change the loop state.
+func (e *EventLoop) modify(f func()) {
+	e.lock.Lock()
+	defer func() {
+		e.lock.Unlock()
+		select {
+		case e.notifyCh <- struct{}{}:
+		default:
+		}
+	}()
+	f()
+}
+
+// step runs the next event on the loop, if possible.
+//
+// If the event loop can no longer run, the first return
+// value is false.
+// If this is due to an error, the second argument
+// indicates the error.
+func (e *EventLoop) step() (bool, error) {
+	e.lock.Lock()
+	defer e.lock.Unlock()
+
+	for _, h := range e.handles {
+		if len(h.pollStreams) == 0 {
+			// Do not run the loop while a Goroutine is
+			// doing work in real-time.
+			return false, nil
+		}
+	}
+
+	if len(e.timers) == 0 {
+		return false, errors.New("deadlock: all Handles are polling")
+	}
+
+	// Shuffle so that two timers with the same deadline
+	// don't execute in a deterministic order.
+	indices := rand.Perm(len(e.timers))
+
+	minTimerIdx := indices[0]
+	for _, i := range indices[1:] {
+		if e.timers[i].time < e.timers[minTimerIdx].time {
+			minTimerIdx = i
+		}
+	}
+	timer := e.timers[minTimerIdx]
+
+	essentials.UnorderedDelete(e.timers, minTimerIdx)
+	e.time = math.Max(e.time, timer.time)
+	e.deliver(timer.event)
+
+	return true, nil
+}
+
+func (e *EventLoop) deliver(event *Event) {
+	// Shuffle the handles so that two receivers don't get
+	// messages in a deterministic order.
+	indices := rand.Perm(len(e.handles))
+	for _, i := range indices {
+		h := e.handles[i]
+		for _, stream := range h.pollStreams {
+			if stream == event.Stream {
+				h.pollChan <- event
+				h.pollChan = nil
+				h.pollStreams = nil
+				return
+			}
+		}
+	}
+	event.Stream.pending = append(event.Stream.pending, event.Message)
+}
