@@ -85,6 +85,7 @@ func (s *SwitcherNetwork) Send(h *Handle, msg *Message) {
 
 func (s *SwitcherNetwork) stopPlan(h *Handle) []*switchedMsg {
 	var currentState []*switchedMsg
+	var cancelTimers []*Timer
 	for _, step := range s.plan {
 		if h.Time() >= step.endTime {
 			// The timers may have fired, so we let this go.
@@ -98,9 +99,10 @@ func (s *SwitcherNetwork) stopPlan(h *Handle) []*switchedMsg {
 			}
 		}
 		for _, timer := range step.timers {
-			h.Cancel(timer)
+			cancelTimers = append(cancelTimers, timer)
 		}
 	}
+	h.CancelAll(cancelTimers)
 	return currentState
 }
 
@@ -132,6 +134,12 @@ func (s *SwitcherNetwork) computeDataRates(state []*switchedMsg) {
 func (s *SwitcherNetwork) createPlan(h *Handle, state []*switchedMsg) {
 	s.plan = switchedPlan{}
 	startTime := h.Time()
+
+	scheduleStreams := []*EventStream{}
+	scheduleMsgs := []interface{}{}
+	scheduleDeadlines := []float64{}
+	scheduleSegments := []*switchedPlanSegment{}
+
 	for len(state) > 0 {
 		s.computeDataRates(state)
 
@@ -146,19 +154,20 @@ func (s *SwitcherNetwork) createPlan(h *Handle, state []*switchedMsg) {
 			}
 		}
 
-		var timers []*Timer
-		for msg := range nextMsgs {
-			delay := startTime - h.Time() + lowestETA
-			timers = append(timers, h.Schedule(msg.msg.Dest.Incoming, msg.msg, delay))
-		}
-
-		endTime := timers[0].Time()
-		s.plan = append(s.plan, &switchedPlanSegment{
+		endTime := startTime + lowestETA
+		segment := &switchedPlanSegment{
 			startTime:  startTime,
 			endTime:    endTime,
-			timers:     timers,
 			startState: state,
-		})
+		}
+		s.plan = append(s.plan, segment)
+
+		for msg := range nextMsgs {
+			scheduleStreams = append(scheduleStreams, msg.msg.Dest.Incoming)
+			scheduleMsgs = append(scheduleMsgs, msg.msg)
+			scheduleDeadlines = append(scheduleDeadlines, endTime)
+			scheduleSegments = append(scheduleSegments, segment)
+		}
 
 		newState := []*switchedMsg{}
 		for _, msg := range state {
@@ -170,6 +179,9 @@ func (s *SwitcherNetwork) createPlan(h *Handle, state []*switchedMsg) {
 		state = newState
 	}
 
+	for i, timer := range h.ScheduleAllAbs(scheduleStreams, scheduleMsgs, scheduleDeadlines) {
+		scheduleSegments[i].timers = append(scheduleSegments[i].timers, timer)
+	}
 }
 
 // switchedMsg encodes the state of a message that is
