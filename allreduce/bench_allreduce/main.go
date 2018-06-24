@@ -50,8 +50,9 @@ func (r *RunInfo) Run(loop *simulator.EventLoop, hostFn func(h *allreduce.Host))
 func main() {
 	reducers := []allreduce.Allreducer{
 		allreduce.NaiveAllreducer{},
+		allreduce.TreeAllreducer{},
 	}
-	reducerNames := []string{"NaiveAllreducer"}
+	reducerNames := []string{"NaiveAllreducer", "TreeAllreducer"}
 	runs := []RunInfo{
 		{
 			NumNodes: 2,
@@ -59,6 +60,11 @@ func main() {
 			Rate:     1e6,
 		},
 		{
+			NumNodes: 16,
+			Latency:  1e-3,
+			Rate:     1e6,
+		},
+		{
 			NumNodes: 32,
 			Latency:  0.1,
 			Rate:     1e6,
@@ -66,6 +72,11 @@ func main() {
 		{
 			NumNodes: 32,
 			Latency:  0.1,
+			Rate:     1e9,
+		},
+		{
+			NumNodes: 32,
+			Latency:  1e-4,
 			Rate:     1e9,
 		},
 	}

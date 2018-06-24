@@ -20,11 +20,7 @@ func (n NaiveAllreducer) Allreduce(h *Host, data []float64, fn ReduceFn) []float
 		}
 	}
 
-	for i, node := range h.Nodes {
-		if node == h.Node {
-			gatheredVecs[i] = data
-		}
-	}
+	gatheredVecs[h.Index()] = data
 
 	return fn(h.Handle, gatheredVecs...)
 }

@@ -52,3 +52,14 @@ func (h *Host) Recv() ([]float64, *simulator.Node) {
 	res := h.Node.Recv(h.Handle)
 	return res.Message.([]float64), res.Source
 }
+
+// Index returns the current node's index in the list of
+// nodes.
+func (h *Host) Index() int {
+	for i, node := range h.Nodes {
+		if node == h.Node {
+			return i
+		}
+	}
+	panic("unreachable")
+}
