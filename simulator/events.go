@@ -81,16 +81,16 @@ func (h *Handle) Schedule(stream *EventStream, msg interface{}, delay float64) *
 	return timer
 }
 
-// Reschedule changes the deadline for an existing timer.
-//
-// The deadline is measured in absolute virtual time.
-// This is different than Schedule(), which takes a delay
-// from the current virtual time.
+// Cancel stops a timer if the timer is scheduled.
 //
 // If the timer is not scheduled, this has no effect.
-func (h *Handle) Reschedule(t *Timer, deadline float64) {
+func (h *Handle) Cancel(t *Timer) {
 	h.modify(func() {
-		t.time = deadline
+		for i, timer := range h.timers {
+			if timer == t {
+				essentials.UnorderedDelete(&h.timers, i)
+			}
+		}
 	})
 }
 
