@@ -130,26 +130,17 @@ func (s *SwitcherNetwork) computeDataRates(state []*switchedMsg) {
 }
 
 func (s *SwitcherNetwork) createPlan(h *Handle, state []*switchedMsg) {
-	s.plan = switchedPlan{}
+	s.plan = make(switchedPlan, 0, len(state))
 	startTime := h.Time()
 	for len(state) > 0 {
 		s.computeDataRates(state)
 
-		lowestETA := state[0].ETA()
-		nextMsgs := map[*switchedMsg]bool{state[0]: true}
-		for _, msg := range state[1:] {
-			if msg.ETA() < lowestETA {
-				lowestETA = msg.ETA()
-				nextMsgs = map[*switchedMsg]bool{msg: true}
-			} else if msg.ETA() == lowestETA {
-				nextMsgs[msg] = true
-			}
-		}
+		nextMsgs, newState, lowestETA := messagesWithLowestETA(state)
 
-		var timers []*Timer
-		for msg := range nextMsgs {
+		timers := make([]*Timer, len(nextMsgs))
+		for i, msg := range nextMsgs {
 			delay := startTime - h.Time() + lowestETA
-			timers = append(timers, h.Schedule(msg.msg.Dest.Incoming, msg.msg, delay))
+			timers[i] = h.Schedule(msg.msg.Dest.Incoming, msg.msg, delay)
 		}
 
 		endTime := timers[0].Time()
@@ -160,16 +151,12 @@ func (s *SwitcherNetwork) createPlan(h *Handle, state []*switchedMsg) {
 			startState: state,
 		})
 
-		newState := []*switchedMsg{}
-		for _, msg := range state {
-			if _, ok := nextMsgs[msg]; !ok {
-				newState = append(newState, msg.AddTime(endTime-startTime))
-			}
+		for i, msg := range newState {
+			newState[i] = msg.AddTime(endTime - startTime)
 		}
-		startTime = endTime
 		state = newState
+		startTime = endTime
 	}
-
 }
 
 // switchedMsg encodes the state of a message that is
@@ -223,3 +210,29 @@ type switchedPlanSegment struct {
 // changes that, together, send all of the current
 // messages on the network.
 type switchedPlan []*switchedPlanSegment
+
+func messagesWithLowestETA(msgs []*switchedMsg) (lowest, rest []*switchedMsg, lowestETA float64) {
+	etas := make([]float64, len(msgs))
+	for i, msg := range msgs {
+		etas[i] = msg.ETA()
+	}
+	lowestETA = etas[0]
+	for _, eta := range etas {
+		if eta < lowestETA {
+			lowestETA = eta
+		}
+	}
+
+	lowest = make([]*switchedMsg, 0, 1)
+	rest = make([]*switchedMsg, 0, len(msgs)-1)
+
+	for i, msg := range msgs {
+		if etas[i] == lowestETA {
+			lowest = append(lowest, msg)
+		} else {
+			rest = append(rest, msg)
+		}
+	}
+
+	return lowest, rest, lowestETA
+}

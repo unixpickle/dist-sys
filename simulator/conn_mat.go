@@ -44,8 +44,8 @@ func (c *ConnMat) SumDest(dst int) float64 {
 		panic("index out of bounds")
 	}
 	var sum float64
-	for i := 0; i < c.numNodes; i++ {
-		sum += c.Get(i, dst)
+	for i := dst; i < len(c.rates); i += c.numNodes {
+		sum += c.rates[i]
 	}
 	return sum
 }
@@ -56,8 +56,8 @@ func (c *ConnMat) SumSource(src int) float64 {
 		panic("index out of bounds")
 	}
 	var sum float64
-	for i := 0; i < c.numNodes; i++ {
-		sum += c.Get(src, i)
+	for i := src * c.numNodes; i < (src+1)*c.numNodes; i++ {
+		sum += c.rates[i]
 	}
 	return sum
 }
@@ -67,8 +67,8 @@ func (c *ConnMat) ScaleDest(dst int, scale float64) {
 	if dst < 0 || dst >= c.numNodes {
 		panic("index out of bounds")
 	}
-	for i := 0; i < c.numNodes; i++ {
-		c.Set(i, dst, c.Get(i, dst)*scale)
+	for i := dst; i < len(c.rates); i += c.numNodes {
+		c.rates[i] *= scale
 	}
 }
 
@@ -77,7 +77,7 @@ func (c *ConnMat) ScaleSource(src int, scale float64) {
 	if src < 0 || src >= c.numNodes {
 		panic("index out of bounds")
 	}
-	for i := 0; i < c.numNodes; i++ {
-		c.Set(src, i, c.Get(src, i)*scale)
+	for i := src * c.numNodes; i < (src+1)*c.numNodes; i++ {
+		c.rates[i] *= scale
 	}
 }
