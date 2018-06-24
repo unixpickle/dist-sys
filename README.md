@@ -35,7 +35,7 @@ loop.Run()
 // Output: Hello, world! 15.5
 ```
 
-The network API sits on top of the event loop API. Here's an example of how one might use the network API to time an API:
+The network API sits on top of the event loop API. Here's an example of how one might use the network API to time a simple back-and-forth interaction between nodes:
 
 ```go
 loop := NewEventLoop()
