@@ -55,7 +55,7 @@ type Handle struct {
 // Poll waits for the next event from a set of streams.
 func (h *Handle) Poll(streams ...*EventStream) *Event {
 	ch := make(chan *Event, 1)
-	h.modify(func() {
+	h.modifyHandles(func() {
 		if h.pollStreams != nil {
 			panic("Handle is shared between Goroutines")
 		}
@@ -152,7 +152,7 @@ func (e *EventLoop) Go(f func(h *Handle)) {
 	e.lock.Unlock()
 	go func() {
 		f(h)
-		e.modify(func() {
+		e.modifyHandles(func() {
 			for i, handle := range e.handles {
 				if handle == h {
 					essentials.UnorderedDelete(&e.handles, i)
@@ -204,7 +204,19 @@ func (e *EventLoop) Time() float64 {
 
 // modify calls a function f() such that f can safely
 // change the loop state.
+//
+// This assumes that handle states are not being modified,
+// meaning that no scheduling changes can occur.
+// If this is not the case, use modifyHandles.
 func (e *EventLoop) modify(f func()) {
+	e.lock.Lock()
+	defer e.lock.Unlock()
+	f()
+}
+
+// modifyHandles is like modify(), but it may alter the
+// loop state in such a way that scheduling changes occur.
+func (e *EventLoop) modifyHandles(f func()) {
 	e.lock.Lock()
 	defer func() {
 		e.lock.Unlock()
