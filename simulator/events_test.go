@@ -2,6 +2,7 @@ package simulator
 
 import (
 	"fmt"
+	"math/rand"
 	"testing"
 	"time"
 )
@@ -230,5 +231,24 @@ func TestEventLoopDeadlocks(t *testing.T) {
 
 	if loop.Run() == nil {
 		t.Error("did not detect deadlock")
+	}
+}
+
+func BenchmarkTimerManipulation(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		loop := NewEventLoop()
+		loop.Go(func(h *Handle) {
+			stream := h.Stream()
+			for j := 0; j < 32; j++ {
+				timers := []*Timer{}
+				for k := 0; k < 32; k++ {
+					timers = append(timers, h.Schedule(stream, "hello", rand.Float64()))
+				}
+				for _, j := range rand.Perm(len(timers)) {
+					h.Cancel(timers[j])
+				}
+			}
+		})
+		loop.Run()
 	}
 }

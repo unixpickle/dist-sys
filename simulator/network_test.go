@@ -2,6 +2,7 @@ package simulator
 
 import (
 	"fmt"
+	"math/rand"
 	"strings"
 	"testing"
 )
@@ -167,6 +168,34 @@ func TestSwitchedNetworkOversubscribed(t *testing.T) {
 		})
 		if loop.Run() == nil {
 			t.Error("expected deadlock error")
+		}
+	}
+}
+
+func BenchmarkSwitchedNetworkSends(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		loop := NewEventLoop()
+		nodes := make([]*Node, 8)
+		for i := range nodes {
+			nodes[i] = &Node{Incoming: loop.Stream()}
+		}
+		switcher := NewGreedyDropSwitcher(len(nodes), 1.0)
+		network := NewSwitcherNetwork(switcher, nodes, 0.1)
+		for j := range nodes {
+			node := nodes[j]
+			loop.Go(func(h *Handle) {
+				for _, other := range nodes {
+					network.Send(h, &Message{
+						Source:  node,
+						Dest:    other,
+						Message: "hello",
+						Size:    rand.Float64(),
+					})
+				}
+			})
+		}
+		if err := loop.Run(); err != nil {
+			b.Fatal(err)
 		}
 	}
 }
