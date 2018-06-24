@@ -20,6 +20,11 @@ type Node struct {
 	Incoming *EventStream
 }
 
+// Recv receives the next message.
+func (n *Node) Recv(h *Handle) *Message {
+	return h.Poll(n.Incoming).Message.(*Message)
+}
+
 // A Network represents an abstract way of communicating
 // between nodes.
 type Network interface {

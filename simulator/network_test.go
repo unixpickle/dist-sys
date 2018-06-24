@@ -17,7 +17,7 @@ func TestSwitchedNetworkSingleMessage(t *testing.T) {
 			Message: "hi node 2",
 			Size:    124.0,
 		})
-		if val := h.Poll(node1.Incoming).Message.(*Message).Message; val != "hi node 1" {
+		if val := node1.Recv(h).Message; val != "hi node 1" {
 			t.Errorf("unexpected message: %s", val)
 		}
 	})
@@ -28,7 +28,7 @@ func TestSwitchedNetworkSingleMessage(t *testing.T) {
 			Message: "hi node 1",
 			Size:    124.0,
 		})
-		if val := h.Poll(node2.Incoming).Message.(*Message).Message; val != "hi node 2" {
+		if val := node2.Recv(h).Message; val != "hi node 2" {
 			t.Errorf("unexpected message: %s", val)
 		}
 	})
@@ -65,7 +65,7 @@ func TestSwitchedNetworkOversubscribed(t *testing.T) {
 			Message: "hi node 2 (message 2)",
 			Size:    124.0,
 		})
-		if val := h.Poll(node1.Incoming).Message.(*Message).Message; val != "hi node 1" {
+		if val := node1.Recv(h).Message; val != "hi node 1" {
 			t.Errorf("unexpected message: %s", val)
 		}
 		expectedTime := 1.0 + 2.0 + 124.0/dataRate
@@ -86,14 +86,14 @@ func TestSwitchedNetworkOversubscribed(t *testing.T) {
 			Message: "hi node 1",
 			Size:    124.0,
 		})
-		if val := h.Poll(node2.Incoming).Message.(*Message).Message; val != "hi node 2 (message 1)" {
+		if val := node2.Recv(h).Message; val != "hi node 2 (message 1)" {
 			t.Errorf("unexpected message: %s", val)
 		}
 		expectedTime := 2.0 + 2.0*123.0/dataRate
 		if h.Time() != expectedTime {
 			t.Errorf("expected time %f but got %f", expectedTime, h.Time())
 		}
-		if val := h.Poll(node2.Incoming).Message.(*Message).Message; val != "hi node 2 (message 2)" {
+		if val := node2.Recv(h).Message; val != "hi node 2 (message 2)" {
 			t.Errorf("unexpected message: %s", val)
 		}
 		expectedTime += 1.0 / dataRate
