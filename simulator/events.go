@@ -75,64 +75,30 @@ func (h *Handle) Poll(streams ...*EventStream) *Event {
 
 // Schedule creates a Timer for delivering an event.
 func (h *Handle) Schedule(stream *EventStream, msg interface{}, delay float64) *Timer {
-	return h.ScheduleAll([]*EventStream{stream}, []interface{}{msg}, []float64{delay})[0]
-}
-
-// ScheduleAll schedules a batch of timers at once.
-func (h *Handle) ScheduleAll(streams []*EventStream, msgs []interface{}, delays []float64) []*Timer {
-	deadlines := make([]float64, len(delays))
-	for i, delay := range delays {
-		deadlines[i] = delay + h.time
+	if stream.loop != h.EventLoop {
+		panic("EventStream is not associated with the correct EventLoop")
 	}
-	return h.ScheduleAllAbs(streams, msgs, deadlines)
-}
-
-// ScheduleAllAbs schedules a batch of timers at once with
-// absolute deadlines (rather than relative delays).
-func (h *Handle) ScheduleAllAbs(streams []*EventStream, msgs []interface{}, deadlines []float64) []*Timer {
-	var timers []*Timer
+	var timer *Timer
 	h.modify(func() {
-		for i, stream := range streams {
-			if stream.loop != h.EventLoop {
-				panic("EventStream is not associated with the correct EventLoop")
-			}
-			timer := &Timer{
-				time:  deadlines[i],
-				event: &Event{Message: msgs[i], Stream: stream},
-			}
-			h.timers = append(h.timers, timer)
-			timers = append(timers, timer)
+		timer = &Timer{
+			time:  h.time + delay,
+			event: &Event{Message: msg, Stream: stream},
 		}
+		h.timers = append(h.timers, timer)
 	})
-	return timers
+	return timer
 }
 
 // Cancel stops a timer if the timer is scheduled.
 //
 // If the timer is not scheduled, this has no effect.
 func (h *Handle) Cancel(t *Timer) {
-	h.CancelAll([]*Timer{t})
-}
-
-// CancelAll stops a set of timers.
-//
-// If the timers are not scheduled, this has no effect.
-func (h *Handle) CancelAll(timers []*Timer) {
 	h.modify(func() {
-		newTimers := make([]*Timer, 0, len(h.timers))
-		for _, timer := range h.timers {
-			found := false
-			for _, t := range timers {
-				if t == timer {
-					found = true
-					break
-				}
-			}
-			if !found {
-				newTimers = append(newTimers, timer)
+		for i, timer := range h.timers {
+			if timer == t {
+				essentials.UnorderedDelete(&h.timers, i)
 			}
 		}
-		h.timers = newTimers
 	})
 }
 
