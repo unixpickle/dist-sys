@@ -9,13 +9,7 @@ type NaiveAllreducer struct{}
 func (n NaiveAllreducer) Allreduce(h *Host, data []float64, fn ReduceFn) []float64 {
 	gatheredVecs := make([][]float64, len(h.Nodes))
 
-	for i, node := range h.Nodes {
-		if node != h.Node {
-			h.Send(node, data)
-		} else {
-			gatheredVecs[i] = data
-		}
-	}
+	h.Bcast(data)
 
 	for i := 0; i < len(gatheredVecs)-1; i++ {
 		incoming, source := h.Recv()
@@ -23,6 +17,12 @@ func (n NaiveAllreducer) Allreduce(h *Host, data []float64, fn ReduceFn) []float
 			if node == source {
 				gatheredVecs[j] = incoming
 			}
+		}
+	}
+
+	for i, node := range h.Nodes {
+		if node == h.Node {
+			gatheredVecs[i] = data
 		}
 	}
 

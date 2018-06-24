@@ -28,11 +28,18 @@ func (n *Node) Recv(h *Handle) *Message {
 // A Network represents an abstract way of communicating
 // between nodes.
 type Network interface {
-	// Send a message object from one node to another.
+	// Send message objects from one node to another.
 	// The message will arrive on the receiving node's
 	// incoming EventStream if the communication is
 	// successful.
-	Send(h *Handle, msg *Message)
+	//
+	// This is a non-blocking operation.
+	//
+	// It is preferrable to pass multiple messages in at
+	// once if possible.
+	// Otherwise, the Network may have to continually
+	// re-plan the entire message delivery timeline.
+	Send(h *Handle, msgs ...*Message)
 }
 
 // A SwitcherNetwork is a network where data is passed
@@ -70,16 +77,18 @@ func NewSwitcherNetwork(switcher Switcher, nodes []*Node, latency float64) *Swit
 //
 // This may affect the speed of messages that are already
 // being transmitted.
-func (s *SwitcherNetwork) Send(h *Handle, msg *Message) {
+func (s *SwitcherNetwork) Send(h *Handle, msgs ...*Message) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
 	state := s.stopPlan(h)
-	state = append(state, &switchedMsg{
-		msg:              msg,
-		remainingLatency: s.latency,
-		remainingSize:    msg.Size,
-	})
+	for _, msg := range msgs {
+		state = append(state, &switchedMsg{
+			msg:              msg,
+			remainingLatency: s.latency,
+			remainingSize:    msg.Size,
+		})
+	}
 	s.createPlan(h, state)
 }
 

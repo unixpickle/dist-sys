@@ -20,6 +20,23 @@ type Host struct {
 	Network simulator.Network
 }
 
+// Bcast sends a vector to every other node.
+func (h *Host) Bcast(vec []float64) {
+	messages := make([]*simulator.Message, 0, len(h.Nodes)-1)
+	for _, node := range h.Nodes {
+		if node == h.Node {
+			continue
+		}
+		messages = append(messages, &simulator.Message{
+			Source:  h.Node,
+			Dest:    node,
+			Message: vec,
+			Size:    float64(len(vec) * 8),
+		})
+	}
+	h.Network.Send(h.Handle, messages...)
+}
+
 // Send schedules a message to be sent to the destination.
 func (h *Host) Send(dst *simulator.Node, vec []float64) {
 	h.Network.Send(h.Handle, &simulator.Message{

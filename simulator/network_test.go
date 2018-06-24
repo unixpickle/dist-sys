@@ -2,6 +2,7 @@ package simulator
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"strings"
 	"testing"
@@ -169,6 +170,71 @@ func TestSwitchedNetworkOversubscribed(t *testing.T) {
 		if loop.Run() == nil {
 			t.Error("expected deadlock error")
 		}
+	}
+}
+
+func TestSwitchedNetworkBatchedEquivalence(t *testing.T) {
+	loop := NewEventLoop()
+
+	dataRate := 4.0
+	switcher := NewGreedyDropSwitcher(2, dataRate)
+	node1 := &Node{Incoming: loop.Stream()}
+	node2 := &Node{Incoming: loop.Stream()}
+	network := NewSwitcherNetwork(switcher, []*Node{node1, node2}, 2.0)
+
+	testBatchedEquivalence(t, loop, network, node1, node2)
+}
+
+func testBatchedEquivalence(t *testing.T, loop *EventLoop, network Network, n1, n2 *Node) {
+	messages := []*Message{}
+	for i := 0; i < 20; i++ {
+		messages = append(messages, &Message{
+			Source:  n1,
+			Dest:    n2,
+			Message: rand.NormFloat64(),
+			Size:    rand.Float64() + 0.1,
+		})
+	}
+
+	var serialMessages []*Message
+	var serialTimes []float64
+	loop.Go(func(h *Handle) {
+		for _, msg := range messages {
+			network.Send(h, msg)
+		}
+		for _ = range messages {
+			serialMessages = append(serialMessages, n2.Recv(h))
+			serialTimes = append(serialTimes, h.Time())
+		}
+	})
+	if err := loop.Run(); err != nil {
+		t.Fatal(err)
+	}
+
+	t1 := loop.Time()
+
+	loop.Go(func(h *Handle) {
+		network.Send(h, messages...)
+		startTime := h.Time()
+		for i := range messages {
+			msg := n2.Recv(h)
+			if serialMessages[i] != msg {
+				t.Errorf("msg %d: expected %v but got %v", i, serialMessages[i], msg)
+			}
+			curTime := h.Time() - startTime
+			if math.Abs(curTime-serialTimes[i])/curTime > 1e-5 {
+				t.Errorf("msg %d: expected time %f but got %f", i, serialTimes[i], curTime)
+			}
+		}
+	})
+	if err := loop.Run(); err != nil {
+		t.Fatal(err)
+	}
+
+	t2 := loop.Time()
+
+	if math.Abs(t2-2*t1)/t1 > 1e-5 {
+		t.Errorf("expected end time %f but got %f", 2*t1, t2)
 	}
 }
 
