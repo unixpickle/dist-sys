@@ -1,6 +1,55 @@
 package simulator
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
+
+func ExampleNetwork() {
+	loop := NewEventLoop()
+
+	// A switch with two ports that do I/O at 2 bytes/sec.
+	switcher := NewGreedyDropSwitcher(2, 2.0)
+
+	node1 := &Node{Incoming: loop.Stream()}
+	node2 := &Node{Incoming: loop.Stream()}
+	latency := 0.25
+	network := NewSwitcherNetwork(switcher, []*Node{node1, node2}, latency)
+
+	// Goroutine for node 1.
+	loop.Go(func(h *Handle) {
+		message := node1.Recv(h).Message.(string)
+		response := strings.ToUpper(message)
+
+		// Simulate time it took to do the calculation.
+		h.Sleep(0.125)
+
+		network.Send(h, &Message{
+			Source:  node1,
+			Dest:    node2,
+			Message: response,
+			Size:    float64(len(message)),
+		})
+	})
+
+	// Goroutine for node 2.
+	loop.Go(func(h *Handle) {
+		msg := "this should be capitalized"
+		network.Send(h, &Message{
+			Source:  node2,
+			Dest:    node1,
+			Message: msg,
+			Size:    float64(len(msg)),
+		})
+		response := node2.Recv(h).Message.(string)
+		fmt.Println(response, h.Time())
+	})
+
+	loop.Run()
+
+	// Output: THIS SHOULD BE CAPITALIZED 26.625
+}
 
 func TestSwitchedNetworkSingleMessage(t *testing.T) {
 	loop := NewEventLoop()

@@ -1,9 +1,26 @@
 package simulator
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
+
+func ExampleEventLoop() {
+	loop := NewEventLoop()
+	stream := loop.Stream()
+	loop.Go(func(h *Handle) {
+		msg := h.Poll(stream).Message
+		fmt.Println(msg, h.Time())
+	})
+	loop.Go(func(h *Handle) {
+		message := "Hello, world!"
+		delay := 15.5
+		h.Schedule(stream, message, delay)
+	})
+	loop.Run()
+	// Output: Hello, world! 15.5
+}
 
 func TestEventLoopTimer(t *testing.T) {
 	loop := NewEventLoop()
