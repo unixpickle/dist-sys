@@ -33,6 +33,14 @@ type Timer struct {
 	event *Event
 }
 
+// Time gets the time when the timer will be fired.
+//
+// If the virtual time is lower than a timer's Time(),
+// then it is guaranteed that the timer has not fired.
+func (t *Timer) Time() float64 {
+	return t.time
+}
+
 // A Handle is a Goroutine's mechanism for accessing an
 // EventLoop. Goroutines should not share Handles.
 type Handle struct {
