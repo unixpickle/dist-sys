@@ -2,6 +2,7 @@ package simulator
 
 import (
 	"math"
+	"math/rand"
 	"sync"
 )
 
@@ -40,6 +41,17 @@ type Network interface {
 	// Otherwise, the Network may have to continually
 	// re-plan the entire message delivery timeline.
 	Send(h *Handle, msgs ...*Message)
+}
+
+// A RandomNetwork is a network that assigns random delays
+// to every message.
+type RandomNetwork struct{}
+
+// Send sends the messages with random delays.
+func (r RandomNetwork) Send(h *Handle, msgs ...*Message) {
+	for _, msg := range msgs {
+		h.Schedule(msg.Dest.Incoming, msg, rand.Float64())
+	}
 }
 
 // A SwitcherNetwork is a network where data is passed
