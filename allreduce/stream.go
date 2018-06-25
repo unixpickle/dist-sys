@@ -1,8 +1,6 @@
 package allreduce
 
 import (
-	"fmt"
-
 	"github.com/unixpickle/dist-sys/simulator"
 	"github.com/unixpickle/essentials"
 )
@@ -92,8 +90,6 @@ func (s StreamAllreducer) allreduceRoot(h *Host, data []float64) []float64 {
 			}
 		}
 	}
-
-	fmt.Println("master done")
 
 	return reduced
 }
