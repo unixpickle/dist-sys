@@ -16,11 +16,6 @@ type RunInfo struct {
 	Rate     float64
 }
 
-func (r *RunInfo) String() string {
-	return fmt.Sprintf("%d nodes, latency=%s, rate=%s", r.NumNodes, strconv.FormatFloat(r.Latency, 'f', -1, 64),
-		strconv.FormatFloat(r.Rate, 'E', -1, 64))
-}
-
 // Run creates a network and drops each host into its own
 // Goroutine.
 func (r *RunInfo) Run(loop *simulator.EventLoop, hostFn func(h *allreduce.Host)) {
@@ -52,7 +47,7 @@ func main() {
 		allreduce.NaiveAllreducer{},
 		allreduce.TreeAllreducer{},
 	}
-	reducerNames := []string{"NaiveAllreducer", "TreeAllreducer"}
+	reducerNames := []string{"Naive", "Tree"}
 	runs := []RunInfo{
 		{
 			NumNodes: 2,
@@ -83,12 +78,12 @@ func main() {
 	vecSizes := []int{10, 10000, 10000000}
 
 	// Markdown table header.
-	fmt.Print("| Scenario ")
+	fmt.Print("| Nodes | Latency | NIC rate | Size ")
 	for _, reducerName := range reducerNames {
 		fmt.Printf("| %s ", reducerName)
 	}
 	fmt.Println("|")
-	for _ = range reducerNames {
+	for i := 0; i < 4+len(reducers); i++ {
 		fmt.Print("|:--")
 	}
 	fmt.Println("|")
@@ -96,7 +91,13 @@ func main() {
 	// Markdown table body.
 	for _, runInfo := range runs {
 		for _, size := range vecSizes {
-			fmt.Printf("| %s (%d dims) ", runInfo.String(), size)
+			fmt.Printf(
+				"| %d | %s | %s | %d ",
+				runInfo.NumNodes,
+				strconv.FormatFloat(runInfo.Latency, 'f', -1, 64),
+				strconv.FormatFloat(runInfo.Rate, 'E', -1, 64),
+				size,
+			)
 			for _, reducer := range reducers {
 				loop := simulator.NewEventLoop()
 				runInfo.Run(loop, func(h *allreduce.Host) {
