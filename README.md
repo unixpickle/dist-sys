@@ -1,12 +1,15 @@
 # dist-sys
 
-This repository contains toy implementations of various distributed algorithms. The goal is to teach myself about distributed systems without actually using a ton of machines.
+The main goal of this repository is to play with distributed systems *without* needing a large cluster of machines. As I learn about distributed algorithms, I'm going to implement them here.
 
 # Resources
 
  * Allreduce algorithms: [Optimization of Collective Communication Operations in MPICH](http://www.mcs.anl.gov/~thakur/papers/ijhpca-coll.pdf)
 
 # Packages
+
+ * [simulator](#simulator) - simulate a network of machines using "virtual" time.
+ * [allreduce](#allreduce) - quickly sum or max large vectors across many machines.
 
 ## simulator
 
