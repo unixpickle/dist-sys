@@ -48,7 +48,7 @@ func main() {
 		allreduce.TreeAllreducer{},
 		allreduce.StreamAllreducer{},
 	}
-	reducerNames := []string{"Naive", "Tree"}
+	reducerNames := []string{"Naive", "Tree", "Stream"}
 	runs := []RunInfo{
 		{
 			NumNodes: 2,
