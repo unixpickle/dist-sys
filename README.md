@@ -9,7 +9,7 @@ The main goal of this repository is to play with distributed systems *without* n
 # Packages
 
  * [simulator](#simulator) - simulate a network of machines using "virtual" time.
- * [allreduce](#allreduce) - quickly sum or max large vectors across many machines.
+ * [collcomm](#collcomm) - collective communications, e.g. "allreduce" to quickly sum large vectors across many machines.
 
 ## simulator
 
@@ -85,9 +85,13 @@ loop.Run()
 // Output: THIS SHOULD BE CAPITALIZED 26.625
 ```
 
-## allreduce
+## collcomm
 
-This package contains some Allreduce implementations. For those who are not familiar, allreduce is extremely useful in large-scale machine learning. It allows you to quickly sum vectors (gradients, in most cases) across a large cluster of machines.
+This package is a re-implementation of some [MPI](https://en.wikipedia.org/wiki/Message_Passing_Interface) routines.
+
+### allreduce
+
+This package implements the "allreduce" collective communication API. For those who are not familiar, allreduce is extremely useful in large-scale machine learning. It allows you to quickly sum vectors (gradients, in most cases) across a large cluster of machines.
 
 I've implemented three algorithms for allreduce:
 

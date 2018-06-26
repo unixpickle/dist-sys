@@ -6,6 +6,8 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/unixpickle/dist-sys/collcomm"
+
 	"github.com/unixpickle/dist-sys/simulator"
 )
 
@@ -20,7 +22,6 @@ func RunAllreducerTests(t *testing.T, reducer Allreducer) {
 					loop := simulator.NewEventLoop()
 					vectors := make([][]float64, numNodes)
 					nodes := make([]*simulator.Node, numNodes)
-					ports := make([]*simulator.Port, numNodes)
 					sum := make([]float64, size)
 					for i := range nodes {
 						vectors[i] = make([]float64, size)
@@ -29,7 +30,6 @@ func RunAllreducerTests(t *testing.T, reducer Allreducer) {
 							sum[j] += vectors[i][j]
 						}
 						nodes[i] = simulator.NewNode()
-						ports[i] = nodes[i].Port(loop)
 					}
 
 					var network simulator.Network
@@ -41,19 +41,9 @@ func RunAllreducerTests(t *testing.T, reducer Allreducer) {
 					}
 
 					results := make([][]float64, numNodes)
-					for i := range ports {
-						port := ports[i]
-						vec := vectors[i]
-						nodeIdx := i
-						loop.Go(func(h *simulator.Handle) {
-							results[nodeIdx] = reducer.Allreduce(&Host{
-								Handle:  h,
-								Port:    port,
-								Ports:   ports,
-								Network: network,
-							}, vec, Sum)
-						})
-					}
+					collcomm.SpawnComms(loop, network, nodes, func(c *collcomm.Comms) {
+						results[c.Index()] = reducer.Allreduce(c, vectors[c.Index()], collcomm.Sum)
+					})
 
 					if err := loop.Run(); err != nil {
 						t.Fatal(err)

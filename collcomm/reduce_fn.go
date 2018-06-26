@@ -1,8 +1,12 @@
-package allreduce
+package collcomm
 
 import (
 	"github.com/unixpickle/dist-sys/simulator"
 )
+
+// FlopTime is the amount of virtual time it takes to
+// perform a single floating-point operation.
+const FlopTime = 1e-9
 
 // A ReduceFn is an operation that reduces many vectors
 // into a single vector.

@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/unixpickle/dist-sys/allreduce"
+	"github.com/unixpickle/dist-sys/collcomm"
+	"github.com/unixpickle/dist-sys/collcomm/allreduce"
 	"github.com/unixpickle/dist-sys/simulator"
 	"github.com/unixpickle/essentials"
 )
@@ -18,29 +19,14 @@ type RunInfo struct {
 
 // Run creates a network and drops each host into its own
 // Goroutine.
-func (r *RunInfo) Run(loop *simulator.EventLoop, hostFn func(h *allreduce.Host)) {
+func (r *RunInfo) Run(loop *simulator.EventLoop, commFn func(c *collcomm.Comms)) {
 	nodes := make([]*simulator.Node, r.NumNodes)
-	ports := make([]*simulator.Port, r.NumNodes)
 	for i := range nodes {
 		nodes[i] = simulator.NewNode()
-		ports[i] = nodes[i].Port(loop)
 	}
-
 	switcher := simulator.NewGreedyDropSwitcher(r.NumNodes, r.Rate)
 	network := simulator.NewSwitcherNetwork(switcher, nodes, r.Latency)
-
-	for i := range ports {
-		port := ports[i]
-		loop.Go(func(h *simulator.Handle) {
-			hostFn(&allreduce.Host{
-				Handle:  h,
-				Port:    port,
-				Ports:   ports,
-				Network: network,
-			})
-		})
-	}
-
+	collcomm.SpawnComms(loop, network, nodes, commFn)
 	essentials.Must(loop.Run())
 }
 
@@ -103,9 +89,9 @@ func main() {
 			)
 			for _, reducer := range reducers {
 				loop := simulator.NewEventLoop()
-				runInfo.Run(loop, func(h *allreduce.Host) {
+				runInfo.Run(loop, func(c *collcomm.Comms) {
 					vec := make([]float64, size)
-					reducer.Allreduce(h, vec, FakeReduce)
+					reducer.Allreduce(c, vec, FakeReduce)
 				})
 				fmt.Printf("| %f ", loop.Time())
 			}
@@ -116,6 +102,6 @@ func main() {
 
 // FakeReduce is a ReduceFn that takes no actual CPU time.
 func FakeReduce(h *simulator.Handle, vecs ...[]float64) []float64 {
-	h.Sleep(allreduce.FlopTime * float64(len(vecs)*len(vecs[0])))
+	h.Sleep(collcomm.FlopTime * float64(len(vecs)*len(vecs[0])))
 	return make([]float64, len(vecs[0]))
 }

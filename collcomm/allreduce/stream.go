@@ -1,6 +1,7 @@
 package allreduce
 
 import (
+	"github.com/unixpickle/dist-sys/collcomm"
 	"github.com/unixpickle/dist-sys/simulator"
 	"github.com/unixpickle/essentials"
 )
@@ -26,38 +27,39 @@ type StreamAllreducer struct {
 
 // Allreduce calls fn on chunks of data at a time and
 // returns a vector resulting from the final reduction.
-func (s StreamAllreducer) Allreduce(h *Host, data []float64, fn ReduceFn) []float64 {
-	if len(data) == 0 || len(h.Ports) == 1 {
+func (s StreamAllreducer) Allreduce(c *collcomm.Comms, data []float64,
+	fn collcomm.ReduceFn) []float64 {
+	if len(data) == 0 || len(c.Ports) == 1 {
 		return data
 	}
-	if h.Index() == 0 {
-		return s.allreduceRoot(h, data)
+	if c.Index() == 0 {
+		return s.allreduceRoot(c, data)
 	}
-	return s.allreduceOther(h, data, fn)
+	return s.allreduceOther(c, data, fn)
 }
 
-func (s StreamAllreducer) allreduceRoot(h *Host, data []float64) []float64 {
-	chunksOut := s.chunkify(h, data)
+func (s StreamAllreducer) allreduceRoot(c *collcomm.Comms, data []float64) []float64 {
+	chunksOut := s.chunkify(c, data)
 	reduced := make([]float64, 0, len(data))
 
 	// Kick off the reduction cycle.
-	(&streamPacket{packetType: streamPacketReduce, payload: chunksOut[0]}).Send(h)
+	(&streamPacket{packetType: streamPacketReduce, payload: chunksOut[0]}).Send(c)
 	chunksOut = chunksOut[1:]
 
 	// Push the reduction through the ring.
 	waitingReduceAck := true
 	for len(reduced) < len(data) {
-		packet := recvStreamPacket(h)
+		packet := recvStreamPacket(c)
 		switch packet.packetType {
 		case streamPacketReduce:
 			reduced = append(reduced, packet.payload...)
-			(&streamPacket{packetType: streamPacketReduceAck}).Send(h)
+			(&streamPacket{packetType: streamPacketReduceAck}).Send(c)
 		case streamPacketReduceAck:
 			if !waitingReduceAck {
 				panic("unexpected ACK")
 			}
 			if len(chunksOut) > 0 {
-				(&streamPacket{packetType: streamPacketReduce, payload: chunksOut[0]}).Send(h)
+				(&streamPacket{packetType: streamPacketReduce, payload: chunksOut[0]}).Send(c)
 				chunksOut = chunksOut[1:]
 			} else {
 				waitingReduceAck = false
@@ -74,10 +76,10 @@ func (s StreamAllreducer) allreduceRoot(h *Host, data []float64) []float64 {
 	}
 
 	// Push the data through the bcast cycle.
-	for _, chunk := range s.chunkify(h, reduced) {
-		(&streamPacket{packetType: streamPacketBcast, payload: chunk}).Send(h)
+	for _, chunk := range s.chunkify(c, reduced) {
+		(&streamPacket{packetType: streamPacketBcast, payload: chunk}).Send(c)
 		for {
-			packet := recvStreamPacket(h)
+			packet := recvStreamPacket(c)
 			if packet.packetType == streamPacketReduceAck {
 				if !waitingReduceAck {
 					panic("unexpected ACK")
@@ -94,21 +96,21 @@ func (s StreamAllreducer) allreduceRoot(h *Host, data []float64) []float64 {
 	return reduced
 }
 
-func (s StreamAllreducer) allreduceOther(h *Host, data []float64, fn ReduceFn) []float64 {
+func (s StreamAllreducer) allreduceOther(c *collcomm.Comms, data []float64, fn collcomm.ReduceFn) []float64 {
 	var reduced []float64
 
-	isLastNode := h.Index()+1 == len(h.Ports)
+	isLastNode := c.Index()+1 == len(c.Ports)
 
 	// Reduce our data into the stream.
 	var reduceBlocked bool
 	var reduceBuf []*streamPacket
 	remainingData := data
 	for len(reduced) == 0 {
-		packet := recvStreamPacket(h)
+		packet := recvStreamPacket(c)
 		switch packet.packetType {
 		case streamPacketReduce:
-			(&streamPacket{packetType: streamPacketReduceAck}).Send(h)
-			chunk := fn(h.Handle, packet.payload, remainingData[:len(packet.payload)])
+			(&streamPacket{packetType: streamPacketReduceAck}).Send(c)
+			chunk := fn(c.Handle, packet.payload, remainingData[:len(packet.payload)])
 			remainingData = remainingData[len(packet.payload):]
 			outPacket := &streamPacket{packetType: streamPacketReduce, payload: chunk}
 			reduceBuf = append(reduceBuf, outPacket)
@@ -122,17 +124,17 @@ func (s StreamAllreducer) allreduceOther(h *Host, data []float64, fn ReduceFn) [
 				panic("got bcast before reduce finished")
 			}
 			reduced = append(reduced, packet.payload...)
-			(&streamPacket{packetType: streamPacketBcastAck}).Send(h)
+			(&streamPacket{packetType: streamPacketBcastAck}).Send(c)
 			if !isLastNode {
 				// Otherwise, the packet will never reach
 				// the next node in the ring.
-				packet.Send(h)
+				packet.Send(c)
 			}
 		default:
 			panic("unexpected packet type")
 		}
 		if !reduceBlocked && len(reduceBuf) > 0 {
-			reduceBuf[0].Send(h)
+			reduceBuf[0].Send(c)
 			essentials.OrderedDelete(&reduceBuf, 0)
 			reduceBlocked = true
 		}
@@ -142,7 +144,7 @@ func (s StreamAllreducer) allreduceOther(h *Host, data []float64, fn ReduceFn) [
 	bcastBlocked := true
 	var bcastBuf []*streamPacket
 	for len(reduced) < len(data) || len(bcastBuf) > 0 {
-		packet := recvStreamPacket(h)
+		packet := recvStreamPacket(c)
 		switch packet.packetType {
 		case streamPacketReduceAck:
 			if !reduceBlocked {
@@ -151,7 +153,7 @@ func (s StreamAllreducer) allreduceOther(h *Host, data []float64, fn ReduceFn) [
 			reduceBlocked = false
 		case streamPacketBcast:
 			reduced = append(reduced, packet.payload...)
-			(&streamPacket{packetType: streamPacketBcastAck}).Send(h)
+			(&streamPacket{packetType: streamPacketBcastAck}).Send(c)
 			if !isLastNode {
 				outPacket := &streamPacket{packetType: streamPacketBcast, payload: packet.payload}
 				bcastBuf = append(bcastBuf, outPacket)
@@ -165,7 +167,7 @@ func (s StreamAllreducer) allreduceOther(h *Host, data []float64, fn ReduceFn) [
 			panic("unexpected packet type")
 		}
 		if !bcastBlocked && len(bcastBuf) > 0 {
-			bcastBuf[0].Send(h)
+			bcastBuf[0].Send(c)
 			essentials.OrderedDelete(&bcastBuf, 0)
 			bcastBlocked = true
 		}
@@ -178,12 +180,12 @@ func (s StreamAllreducer) allreduceOther(h *Host, data []float64, fn ReduceFn) [
 	return reduced
 }
 
-func (s StreamAllreducer) chunkify(h *Host, data []float64) [][]float64 {
+func (s StreamAllreducer) chunkify(c *collcomm.Comms, data []float64) [][]float64 {
 	granularity := s.Granularity
 	if granularity == 0 {
 		granularity = 1
 	}
-	chunkSize := len(data) / (len(h.Ports) * granularity)
+	chunkSize := len(data) / (len(c.Ports) * granularity)
 	if chunkSize < 1 {
 		chunkSize = 1
 	}
@@ -212,8 +214,8 @@ type streamPacket struct {
 	payload    []float64
 }
 
-func recvStreamPacket(h *Host) *streamPacket {
-	msg := h.Port.Recv(h.Handle)
+func recvStreamPacket(c *collcomm.Comms) *streamPacket {
+	msg := c.Port.Recv(c.Handle)
 	return msg.Message.(*streamPacket)
 }
 
@@ -224,20 +226,20 @@ func (s *streamPacket) Size() float64 {
 // Send sends the packet to the appropriate host.
 // For ACKs, this is the previous host.
 // For other messages, this is the next host.
-func (s *streamPacket) Send(h *Host) {
-	idx := h.Index()
+func (s *streamPacket) Send(c *collcomm.Comms) {
+	idx := c.Index()
 	var dstIdx int
 	if s.packetType == streamPacketReduceAck || s.packetType == streamPacketBcastAck {
 		dstIdx = idx - 1
 		if dstIdx < 0 {
-			dstIdx = len(h.Ports) - 1
+			dstIdx = len(c.Ports) - 1
 		}
 	} else {
-		dstIdx = (idx + 1) % len(h.Ports)
+		dstIdx = (idx + 1) % len(c.Ports)
 	}
-	h.Network.Send(h.Handle, &simulator.Message{
-		Source:  h.Port,
-		Dest:    h.Ports[dstIdx],
+	c.Network.Send(c.Handle, &simulator.Message{
+		Source:  c.Port,
+		Dest:    c.Ports[dstIdx],
 		Message: s,
 		Size:    s.Size(),
 	})
