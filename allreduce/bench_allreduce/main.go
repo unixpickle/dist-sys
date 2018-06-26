@@ -20,20 +20,22 @@ type RunInfo struct {
 // Goroutine.
 func (r *RunInfo) Run(loop *simulator.EventLoop, hostFn func(h *allreduce.Host)) {
 	nodes := make([]*simulator.Node, r.NumNodes)
+	ports := make([]*simulator.Port, r.NumNodes)
 	for i := range nodes {
-		nodes[i] = &simulator.Node{Incoming: loop.Stream()}
+		nodes[i] = simulator.NewNode()
+		ports[i] = nodes[i].Port(loop)
 	}
 
 	switcher := simulator.NewGreedyDropSwitcher(r.NumNodes, r.Rate)
 	network := simulator.NewSwitcherNetwork(switcher, nodes, r.Latency)
 
-	for i := range nodes {
-		node := nodes[i]
+	for i := range ports {
+		port := ports[i]
 		loop.Go(func(h *simulator.Handle) {
 			hostFn(&allreduce.Host{
 				Handle:  h,
-				Node:    node,
-				Nodes:   nodes,
+				Port:    port,
+				Ports:   ports,
 				Network: network,
 			})
 		})

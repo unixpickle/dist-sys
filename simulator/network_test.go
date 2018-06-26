@@ -14,22 +14,24 @@ func ExampleNetwork() {
 	// A switch with two ports that do I/O at 2 bytes/sec.
 	switcher := NewGreedyDropSwitcher(2, 2.0)
 
-	node1 := &Node{Incoming: loop.Stream()}
-	node2 := &Node{Incoming: loop.Stream()}
+	node1 := NewNode()
+	node2 := NewNode()
 	latency := 0.25
 	network := NewSwitcherNetwork(switcher, []*Node{node1, node2}, latency)
+	port1 := node1.Port(loop)
+	port2 := node2.Port(loop)
 
 	// Goroutine for node 1.
 	loop.Go(func(h *Handle) {
-		message := node1.Recv(h).Message.(string)
+		message := port1.Recv(h).Message.(string)
 		response := strings.ToUpper(message)
 
 		// Simulate time it took to do the calculation.
 		h.Sleep(0.125)
 
 		network.Send(h, &Message{
-			Source:  node1,
-			Dest:    node2,
+			Source:  port1,
+			Dest:    port2,
 			Message: response,
 			Size:    float64(len(message)),
 		})
@@ -39,12 +41,12 @@ func ExampleNetwork() {
 	loop.Go(func(h *Handle) {
 		msg := "this should be capitalized"
 		network.Send(h, &Message{
-			Source:  node2,
-			Dest:    node1,
+			Source:  port2,
+			Dest:    port1,
 			Message: msg,
 			Size:    float64(len(msg)),
 		})
-		response := node2.Recv(h).Message.(string)
+		response := port2.Recv(h).Message.(string)
 		fmt.Println(response, h.Time())
 	})
 
@@ -57,29 +59,33 @@ func TestSwitchedNetworkSingleMessage(t *testing.T) {
 	loop := NewEventLoop()
 
 	switcher := NewGreedyDropSwitcher(2, 2.0)
-	node1 := &Node{Incoming: loop.Stream()}
-	node2 := &Node{Incoming: loop.Stream()}
+	node1 := NewNode()
+	node2 := NewNode()
 	network := NewSwitcherNetwork(switcher, []*Node{node1, node2}, 3.0)
+	port1 := node1.Port(loop)
+	port2 := node2.Port(loop)
+
+	fmt.Println(node1 == node2)
 
 	loop.Go(func(h *Handle) {
 		network.Send(h, &Message{
-			Source:  node1,
-			Dest:    node2,
+			Source:  port1,
+			Dest:    port2,
 			Message: "hi node 2",
 			Size:    124.0,
 		})
-		if val := node1.Recv(h).Message; val != "hi node 1" {
+		if val := port1.Recv(h).Message; val != "hi node 1" {
 			t.Errorf("unexpected message: %s", val)
 		}
 	})
 	loop.Go(func(h *Handle) {
 		network.Send(h, &Message{
-			Source:  node2,
-			Dest:    node1,
+			Source:  port2,
+			Dest:    port1,
 			Message: "hi node 1",
 			Size:    124.0,
 		})
-		if val := node2.Recv(h).Message; val != "hi node 2" {
+		if val := port2.Recv(h).Message; val != "hi node 2" {
 			t.Errorf("unexpected message: %s", val)
 		}
 	})
@@ -99,24 +105,26 @@ func TestSwitchedNetworkOversubscribed(t *testing.T) {
 
 	dataRate := 4.0
 	switcher := NewGreedyDropSwitcher(2, dataRate)
-	node1 := &Node{Incoming: loop.Stream()}
-	node2 := &Node{Incoming: loop.Stream()}
+	node1 := NewNode()
+	node2 := NewNode()
 	network := NewSwitcherNetwork(switcher, []*Node{node1, node2}, 2.0)
+	port1 := node1.Port(loop)
+	port2 := node2.Port(loop)
 
 	loop.Go(func(h *Handle) {
 		network.Send(h, &Message{
-			Source:  node1,
-			Dest:    node2,
+			Source:  port1,
+			Dest:    port2,
 			Message: "hi node 2 (message 1)",
 			Size:    123.0,
 		})
 		network.Send(h, &Message{
-			Source:  node1,
-			Dest:    node2,
+			Source:  port1,
+			Dest:    port2,
 			Message: "hi node 2 (message 2)",
 			Size:    124.0,
 		})
-		if val := node1.Recv(h).Message; val != "hi node 1" {
+		if val := port1.Recv(h).Message; val != "hi node 1" {
 			t.Errorf("unexpected message: %s", val)
 		}
 		expectedTime := 1.0 + 2.0 + 124.0/dataRate
@@ -132,19 +140,19 @@ func TestSwitchedNetworkOversubscribed(t *testing.T) {
 		h.Sleep(1)
 
 		network.Send(h, &Message{
-			Source:  node2,
-			Dest:    node1,
+			Source:  port2,
+			Dest:    port1,
 			Message: "hi node 1",
 			Size:    124.0,
 		})
-		if val := node2.Recv(h).Message; val != "hi node 2 (message 1)" {
+		if val := port2.Recv(h).Message; val != "hi node 2 (message 1)" {
 			t.Errorf("unexpected message: %s", val)
 		}
 		expectedTime := 2.0 + 2.0*123.0/dataRate
 		if h.Time() != expectedTime {
 			t.Errorf("expected time %f but got %f", expectedTime, h.Time())
 		}
-		if val := node2.Recv(h).Message; val != "hi node 2 (message 2)" {
+		if val := port2.Recv(h).Message; val != "hi node 2 (message 2)" {
 			t.Errorf("unexpected message: %s", val)
 		}
 		expectedTime += 1.0 / dataRate
@@ -163,9 +171,9 @@ func TestSwitchedNetworkOversubscribed(t *testing.T) {
 	}
 
 	// Make sure that there are no stray messages.
-	for _, node := range []*Node{node1, node2} {
+	for _, port := range []*Port{port1, port2} {
 		loop.Go(func(h *Handle) {
-			h.Poll(node.Incoming)
+			h.Poll(port.Incoming)
 		})
 		if loop.Run() == nil {
 			t.Error("expected deadlock error")
@@ -178,19 +186,19 @@ func TestSwitchedNetworkBatchedEquivalence(t *testing.T) {
 
 	dataRate := 4.0
 	switcher := NewGreedyDropSwitcher(2, dataRate)
-	node1 := &Node{Incoming: loop.Stream()}
-	node2 := &Node{Incoming: loop.Stream()}
+	node1 := NewNode()
+	node2 := NewNode()
 	network := NewSwitcherNetwork(switcher, []*Node{node1, node2}, 2.0)
 
-	testBatchedEquivalence(t, loop, network, node1, node2)
+	testBatchedEquivalence(t, loop, network, node1.Port(loop), node2.Port(loop))
 }
 
-func testBatchedEquivalence(t *testing.T, loop *EventLoop, network Network, n1, n2 *Node) {
+func testBatchedEquivalence(t *testing.T, loop *EventLoop, network Network, p1, p2 *Port) {
 	messages := []*Message{}
 	for i := 0; i < 20; i++ {
 		messages = append(messages, &Message{
-			Source:  n1,
-			Dest:    n2,
+			Source:  p1,
+			Dest:    p2,
 			Message: rand.NormFloat64(),
 			Size:    rand.Float64() + 0.1,
 		})
@@ -203,7 +211,7 @@ func testBatchedEquivalence(t *testing.T, loop *EventLoop, network Network, n1, 
 			network.Send(h, msg)
 		}
 		for _ = range messages {
-			serialMessages = append(serialMessages, n2.Recv(h))
+			serialMessages = append(serialMessages, p2.Recv(h))
 			serialTimes = append(serialTimes, h.Time())
 		}
 	})
@@ -217,7 +225,7 @@ func testBatchedEquivalence(t *testing.T, loop *EventLoop, network Network, n1, 
 		network.Send(h, messages...)
 		startTime := h.Time()
 		for i := range messages {
-			msg := n2.Recv(h)
+			msg := p2.Recv(h)
 			if serialMessages[i] != msg {
 				t.Errorf("msg %d: expected %v but got %v", i, serialMessages[i], msg)
 			}
@@ -242,17 +250,19 @@ func BenchmarkSwitchedNetworkSends(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		loop := NewEventLoop()
 		nodes := make([]*Node, 8)
+		ports := make([]*Port, 8)
 		for i := range nodes {
-			nodes[i] = &Node{Incoming: loop.Stream()}
+			nodes[i] = NewNode()
+			ports[i] = nodes[i].Port(loop)
 		}
 		switcher := NewGreedyDropSwitcher(len(nodes), 1.0)
 		network := NewSwitcherNetwork(switcher, nodes, 0.1)
-		for j := range nodes {
-			node := nodes[j]
+		for j := range ports {
+			port := ports[j]
 			loop.Go(func(h *Handle) {
-				for _, other := range nodes {
+				for _, other := range ports {
 					network.Send(h, &Message{
-						Source:  node,
+						Source:  port,
 						Dest:    other,
 						Message: "hello",
 						Size:    rand.Float64(),

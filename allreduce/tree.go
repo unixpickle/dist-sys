@@ -2,7 +2,7 @@ package allreduce
 
 import "github.com/unixpickle/dist-sys/simulator"
 
-// A TreeAllreducer arranges the nodes in a binary tree
+// A TreeAllreducer arranges the Ports in a binary tree
 // and performs a reduction by going up the three to a
 // root node, and then back down the tree to a leaf.
 type TreeAllreducer struct{}
@@ -31,12 +31,12 @@ func (t TreeAllreducer) Allreduce(h *Host, data []float64, fn ReduceFn) []float6
 	return finalVector
 }
 
-// positionInTree returns the child nodes and parent node
+// positionInTree returns the child Ports and parent node
 // for a host in the reduction tree.
 //
 // There may be no children.
 // There may be no parent (for the root node).
-func positionInTree(h *Host) (parent *simulator.Node, children []*simulator.Node) {
+func positionInTree(h *Host) (parent *simulator.Port, children []*simulator.Port) {
 	idx := h.Index()
 	for depth := uint(0); true; depth++ {
 		rowSize := 1 << depth
@@ -46,12 +46,12 @@ func positionInTree(h *Host) (parent *simulator.Node, children []*simulator.Node
 		}
 		rowIdx := idx - rowStart
 		if depth > 0 {
-			parent = h.Nodes[rowIdx/2+(rowSize/2-1)]
+			parent = h.Ports[rowIdx/2+(rowSize/2-1)]
 		}
 		firstChild := rowIdx*2 + (rowSize*2 - 1)
 		for i := 0; i < 2; i++ {
-			if firstChild+i < len(h.Nodes) {
-				children = append(children, h.Nodes[firstChild+i])
+			if firstChild+i < len(h.Ports) {
+				children = append(children, h.Ports[firstChild+i])
 			}
 		}
 		return

@@ -27,7 +27,7 @@ type StreamAllreducer struct {
 // Allreduce calls fn on chunks of data at a time and
 // returns a vector resulting from the final reduction.
 func (s StreamAllreducer) Allreduce(h *Host, data []float64, fn ReduceFn) []float64 {
-	if len(data) == 0 || len(h.Nodes) == 1 {
+	if len(data) == 0 || len(h.Ports) == 1 {
 		return data
 	}
 	if h.Index() == 0 {
@@ -97,7 +97,7 @@ func (s StreamAllreducer) allreduceRoot(h *Host, data []float64) []float64 {
 func (s StreamAllreducer) allreduceOther(h *Host, data []float64, fn ReduceFn) []float64 {
 	var reduced []float64
 
-	isLastNode := h.Index()+1 == len(h.Nodes)
+	isLastNode := h.Index()+1 == len(h.Ports)
 
 	// Reduce our data into the stream.
 	var reduceBlocked bool
@@ -183,7 +183,7 @@ func (s StreamAllreducer) chunkify(h *Host, data []float64) [][]float64 {
 	if granularity == 0 {
 		granularity = 1
 	}
-	chunkSize := len(data) / (len(h.Nodes) * granularity)
+	chunkSize := len(data) / (len(h.Ports) * granularity)
 	if chunkSize < 1 {
 		chunkSize = 1
 	}
@@ -213,7 +213,7 @@ type streamPacket struct {
 }
 
 func recvStreamPacket(h *Host) *streamPacket {
-	msg := h.Node.Recv(h.Handle)
+	msg := h.Port.Recv(h.Handle)
 	return msg.Message.(*streamPacket)
 }
 
@@ -230,14 +230,14 @@ func (s *streamPacket) Send(h *Host) {
 	if s.packetType == streamPacketReduceAck || s.packetType == streamPacketBcastAck {
 		dstIdx = idx - 1
 		if dstIdx < 0 {
-			dstIdx = len(h.Nodes) - 1
+			dstIdx = len(h.Ports) - 1
 		}
 	} else {
-		dstIdx = (idx + 1) % len(h.Nodes)
+		dstIdx = (idx + 1) % len(h.Ports)
 	}
 	h.Network.Send(h.Handle, &simulator.Message{
-		Source:  h.Node,
-		Dest:    h.Nodes[dstIdx],
+		Source:  h.Port,
+		Dest:    h.Ports[dstIdx],
 		Message: s,
 		Size:    s.Size(),
 	})

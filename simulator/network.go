@@ -6,38 +6,57 @@ import (
 	"sync"
 )
 
-// A Message is a chunk of data sent between nodes over a
-// network.
-type Message struct {
-	Source  *Node
-	Dest    *Node
-	Message interface{}
-	Size    float64
+// A Node represents a machine on a virtual network.
+type Node struct {
+	unused int
 }
 
-// A Node represents a single machine in a network.
-type Node struct {
-	// Incoming is a stream of *Message objects.
+// NewNode creates a new, unique Node.
+func NewNode() *Node {
+	return &Node{}
+}
+
+// Port creates a new Port connected to the Node.
+func (n *Node) Port(loop *EventLoop) *Port {
+	return &Port{Node: n, Incoming: loop.Stream()}
+}
+
+// A Port identifies a point of communication on a Node.
+// Data is sent from Ports and received on Ports.
+type Port struct {
+	// The Node to which the Port is attached.
+	Node *Node
+
+	// A stream of *Message objects.
 	Incoming *EventStream
 }
 
 // Recv receives the next message.
-func (n *Node) Recv(h *Handle) *Message {
-	return h.Poll(n.Incoming).Message.(*Message)
+func (p *Port) Recv(h *Handle) *Message {
+	return h.Poll(p.Incoming).Message.(*Message)
+}
+
+// A Message is a chunk of data sent between nodes over a
+// network.
+type Message struct {
+	Source  *Port
+	Dest    *Port
+	Message interface{}
+	Size    float64
 }
 
 // A Network represents an abstract way of communicating
 // between nodes.
 type Network interface {
 	// Send message objects from one node to another.
-	// The message will arrive on the receiving node's
+	// The message will arrive on the receiving port's
 	// incoming EventStream if the communication is
 	// successful.
 	//
 	// This is a non-blocking operation.
 	//
 	// It is preferrable to pass multiple messages in at
-	// once if possible.
+	// once, if possible.
 	// Otherwise, the Network may have to continually
 	// re-plan the entire message delivery timeline.
 	Send(h *Handle, msgs ...*Message)
@@ -139,13 +158,13 @@ func (s *SwitcherNetwork) computeDataRates(state []*switchedMsg) {
 	mat := NewConnMat(len(s.nodes))
 	counts := NewConnMat(len(s.nodes))
 	for _, msg := range state {
-		src, dst := nodeToIndex[msg.msg.Source], nodeToIndex[msg.msg.Dest]
+		src, dst := nodeToIndex[msg.msg.Source.Node], nodeToIndex[msg.msg.Dest.Node]
 		mat.Set(src, dst, 1)
 		counts.Set(src, dst, counts.Get(src, dst)+1)
 	}
 	s.switcher.SwitchedRates(mat)
 	for _, msg := range state {
-		src, dst := nodeToIndex[msg.msg.Source], nodeToIndex[msg.msg.Dest]
+		src, dst := nodeToIndex[msg.msg.Source.Node], nodeToIndex[msg.msg.Dest.Node]
 		msg.dataRate = mat.Get(src, dst) / counts.Get(src, dst)
 	}
 }

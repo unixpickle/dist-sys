@@ -9,12 +9,12 @@ type Host struct {
 	// event loop.
 	Handle *simulator.Handle
 
-	// Node is the current node.
-	Node *simulator.Node
+	// Port is the current node's port.
+	Port *simulator.Port
 
-	// Nodes contains all the nodes in the network,
-	// including Node.
-	Nodes []*simulator.Node
+	// Ports contains ports to all the nodes in the
+	// network, including the current node.
+	Ports []*simulator.Port
 
 	// Network is the network connecting the nodes.
 	Network simulator.Network
@@ -22,14 +22,14 @@ type Host struct {
 
 // Bcast sends a vector to every other node.
 func (h *Host) Bcast(vec []float64) {
-	messages := make([]*simulator.Message, 0, len(h.Nodes)-1)
-	for _, node := range h.Nodes {
-		if node == h.Node {
+	messages := make([]*simulator.Message, 0, len(h.Ports)-1)
+	for _, port := range h.Ports {
+		if port == h.Port {
 			continue
 		}
 		messages = append(messages, &simulator.Message{
-			Source:  h.Node,
-			Dest:    node,
+			Source:  h.Port,
+			Dest:    port,
 			Message: vec,
 			Size:    float64(len(vec) * 8),
 		})
@@ -38,9 +38,9 @@ func (h *Host) Bcast(vec []float64) {
 }
 
 // Send schedules a message to be sent to the destination.
-func (h *Host) Send(dst *simulator.Node, vec []float64) {
+func (h *Host) Send(dst *simulator.Port, vec []float64) {
 	h.Network.Send(h.Handle, &simulator.Message{
-		Source:  h.Node,
+		Source:  h.Port,
 		Dest:    dst,
 		Message: vec,
 		Size:    float64(len(vec) * 8),
@@ -48,16 +48,21 @@ func (h *Host) Send(dst *simulator.Node, vec []float64) {
 }
 
 // Recv receives the next vector.
-func (h *Host) Recv() ([]float64, *simulator.Node) {
-	res := h.Node.Recv(h.Handle)
+func (h *Host) Recv() ([]float64, *simulator.Port) {
+	res := h.Port.Recv(h.Handle)
 	return res.Message.([]float64), res.Source
 }
 
 // Index returns the current node's index in the list of
 // nodes.
 func (h *Host) Index() int {
-	for i, node := range h.Nodes {
-		if node == h.Node {
+	return h.IndexOf(h.Port)
+}
+
+// IndexOf returns any node's index.
+func (h *Host) IndexOf(p *simulator.Port) int {
+	for i, port := range h.Ports {
+		if port == p {
 			return i
 		}
 	}
