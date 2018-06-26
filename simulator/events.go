@@ -195,6 +195,14 @@ func (e *EventLoop) Run() error {
 	panic("unreachable")
 }
 
+// MustRun is like Run, but it panics if there is a
+// deadlock.
+func (e *EventLoop) MustRun() {
+	if err := e.Run(); err != nil {
+		panic(err)
+	}
+}
+
 // Time gets the current virtual time.
 func (e *EventLoop) Time() float64 {
 	e.lock.Lock()

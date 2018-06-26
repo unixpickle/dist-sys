@@ -7,7 +7,6 @@ import (
 	"github.com/unixpickle/dist-sys/collcomm"
 	"github.com/unixpickle/dist-sys/collcomm/allreduce"
 	"github.com/unixpickle/dist-sys/simulator"
-	"github.com/unixpickle/essentials"
 )
 
 // RunInfo describes a specific network configuration.
@@ -27,7 +26,7 @@ func (r *RunInfo) Run(loop *simulator.EventLoop, commFn func(c *collcomm.Comms))
 	switcher := simulator.NewGreedyDropSwitcher(r.NumNodes, r.Rate)
 	network := simulator.NewSwitcherNetwork(switcher, nodes, r.Latency)
 	collcomm.SpawnComms(loop, network, nodes, commFn)
-	essentials.Must(loop.Run())
+	loop.MustRun()
 }
 
 func main() {

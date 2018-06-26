@@ -50,7 +50,7 @@ func ExampleNetwork() {
 		fmt.Println(response, h.Time())
 	})
 
-	loop.Run()
+	loop.MustRun()
 
 	// Output: THIS SHOULD BE CAPITALIZED 26.625
 }

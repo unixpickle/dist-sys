@@ -19,7 +19,7 @@ func ExampleEventLoop() {
 		delay := 15.5
 		h.Schedule(stream, message, delay)
 	})
-	loop.Run()
+	loop.MustRun()
 	// Output: Hello, world! 15.5
 }
 
