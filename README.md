@@ -18,7 +18,7 @@ This package provides an API for simulating a distributed network of machines. I
  * An event loop, which schedules events in "virtual" time.
  * A simulated network, which sits on top of the event loop to provide realistic message delivery times.
 
-To use the event loop, first create an `EventLoop` with `NewEventLoop()`. Then use `loop.Go()` to run new Goroutines, each of which gets its own `Handle` to the event loop. To wait for events, use `handle.Poll()`. Virtual time will only pass while all Goroutines with `Handle`s are polling on those `Handle`s. This way, Goroutines can do any amount of real-world work without virtual time passing, and vice versa. If you want virtual time to reflect some time for computation, you can use `Handle.Sleep()` to explicitly let a certain amount of virtual time pass.
+To use the event loop, first create an `EventLoop` with `NewEventLoop()`. Then use `loop.Go()` to run new Goroutines, each of which gets its own `Handle` to the event loop. To wait for events, use `handle.Poll()`. Virtual time will only pass while all Goroutines with `Handle`s are polling on those `Handle`s. This way, Goroutines can do any amount of real-world work without virtual time passing, and vice versa. If you want virtual time to reflect some time for computation, you can use `handle.Sleep()` to explicitly let a certain amount of virtual time pass.
 
 This event loop example shows communication between two Goroutines:
 
