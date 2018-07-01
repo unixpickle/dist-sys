@@ -5,6 +5,10 @@ The main goal of this repository is to play with distributed systems *without* n
 # Resources
 
  * Allreduce algorithms: [Optimization of Collective Communication Operations in MPICH](http://www.mcs.anl.gov/~thakur/papers/ijhpca-coll.pdf)
+ * Paxos
+   * [Wikipedia page](https://en.wikipedia.org/wiki/Paxos_(computer_science)#Multi-Paxos)
+   * [Youtube - The Paxos Algorithm | Rachid Guerraoui](https://www.youtube.com/watch?v=WX4gjowx45E)
+   * [Youtube - Paxos lecture (Raft user study)](https://www.youtube.com/watch?v=JEpsBg0AO6o)
 
 # Packages
 

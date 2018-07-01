@@ -45,6 +45,11 @@ func SpawnComms(loop *simulator.EventLoop, network simulator.Network, nodes []*s
 	}
 }
 
+// Size gets the number of nodes.
+func (c *Comms) Size() int {
+	return len(c.Ports)
+}
+
 // Bcast sends a vector to every other node.
 func (c *Comms) Bcast(vec []float64) {
 	messages := make([]*simulator.Message, 0, len(c.Ports)-1)
