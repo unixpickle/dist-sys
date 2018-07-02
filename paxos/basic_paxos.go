@@ -44,33 +44,13 @@ func (b *BasicPaxos) Propose(h *simulator.Handle, n simulator.Network, p *simula
 			})
 		}
 
-		timeout := h.Stream()
-		h.Schedule(timeout, nil, b.Timeout)
-
-		var acceptorQuorum []*simulator.Port
-		var responses []*basicPrepareResp
-		for len(responses) < len(acceptors) {
-			msg := h.Poll(timeout, p.Incoming)
-			if msg.Stream == timeout {
-				break
-			}
-			netMsg := msg.Message.(*simulator.Message)
-			if resp, ok := netMsg.Message.(*basicPrepareResp); ok {
-				if resp.currentRound == round {
-					responses = append(responses, resp)
-					if resp.success {
-						acceptorQuorum = append(acceptorQuorum, netMsg.Source)
-					}
-				}
-			}
-		}
-
+		acceptorQuorum, prepResps := b.prepareResponses(h, p, acceptors, round)
 		if len(acceptorQuorum) < quorum {
-			round = essentials.MaxInt(round, basicPrepareNextRound(responses))
+			round = essentials.MaxInt(round, basicPrepareNextRound(prepResps))
 			continue
 		}
 
-		if v := basicPrepareAcceptedValue(responses); v != nil {
+		if v := basicPrepareAcceptedValue(prepResps); v != nil {
 			sendVal = v
 		}
 
@@ -84,33 +64,11 @@ func (b *BasicPaxos) Propose(h *simulator.Handle, n simulator.Network, p *simula
 			})
 		}
 
-		timeout = h.Stream()
-		h.Schedule(timeout, nil, b.Timeout)
-
-		var numAccepts int
-		var numAcceptResponses int
-		for numAcceptResponses < len(acceptorQuorum) && numAccepts < quorum {
-			msg := h.Poll(timeout, p.Incoming)
-			if msg.Stream == timeout {
-				break
-			}
-			netMsg := msg.Message.(*simulator.Message)
-			if resp, ok := netMsg.Message.(*basicAcceptResp); ok {
-				if resp.round == round {
-					numAcceptResponses++
-					if resp.accepted {
-						numAccepts++
-					}
-				}
-			}
+		if b.proposeResponse(h, p, len(acceptorQuorum), quorum, round) {
+			return sendVal.value
 		}
 
-		if numAccepts < quorum {
-			round++
-			continue
-		}
-
-		return sendVal.value
+		round++
 	}
 	panic("unreachable")
 }
@@ -161,6 +119,63 @@ func (b *BasicPaxos) Accept(h *simulator.Handle, n simulator.Network, p *simulat
 			})
 		}
 	}
+}
+
+// prepareResponses reads responses from a prepare step.
+//
+// It returns the ports for all acceptors that accepted
+// the round number, and all the responses.
+func (b *BasicPaxos) prepareResponses(h *simulator.Handle, p *simulator.Port,
+	acceptors []*simulator.Port, round int) ([]*simulator.Port, []*basicPrepareResp) {
+	timeout := h.Stream()
+	h.Schedule(timeout, nil, b.Timeout)
+
+	var accPorts []*simulator.Port
+	var responses []*basicPrepareResp
+	for len(responses) < len(acceptors) {
+		msg := h.Poll(timeout, p.Incoming)
+		if msg.Stream == timeout {
+			break
+		}
+		netMsg := msg.Message.(*simulator.Message)
+		if resp, ok := netMsg.Message.(*basicPrepareResp); ok {
+			if resp.currentRound == round {
+				responses = append(responses, resp)
+				if resp.success {
+					accPorts = append(accPorts, netMsg.Source)
+				}
+			}
+		}
+	}
+	return accPorts, responses
+}
+
+// proposeResponse reads responses to an accept request
+// and determines whether the value was accepted or not.
+func (b *BasicPaxos) proposeResponse(h *simulator.Handle, p *simulator.Port,
+	numSent, quorum, round int) bool {
+	timeout := h.Stream()
+	h.Schedule(timeout, nil, b.Timeout)
+
+	var numAccepts int
+	var numAcceptResponses int
+	for numAcceptResponses < numSent && numAccepts < quorum {
+		msg := h.Poll(timeout, p.Incoming)
+		if msg.Stream == timeout {
+			break
+		}
+		netMsg := msg.Message.(*simulator.Message)
+		if resp, ok := netMsg.Message.(*basicAcceptResp); ok {
+			if resp.round == round {
+				numAcceptResponses++
+				if resp.accepted {
+					numAccepts++
+				}
+			}
+		}
+	}
+
+	return numAccepts >= quorum
 }
 
 type basicValue struct {
