@@ -2,6 +2,7 @@ package simulator
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"math/rand"
 	"sync"
@@ -83,6 +84,9 @@ func (h *Handle) Schedule(stream *EventStream, msg interface{}, delay float64) *
 		timer = &Timer{
 			time:  h.time + delay,
 			event: &Event{Message: msg, Stream: stream},
+		}
+		if math.IsInf(timer.time, 0) || math.IsNaN(timer.time) {
+			panic(fmt.Sprintf("invalid deadline: %f", timer.time))
 		}
 		h.timers = append(h.timers, timer)
 	})
