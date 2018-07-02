@@ -1,6 +1,9 @@
 package paxos
 
 import (
+	"math"
+	"math/rand"
+
 	"github.com/unixpickle/dist-sys/simulator"
 	"github.com/unixpickle/essentials"
 )
@@ -11,11 +14,9 @@ import (
 // This algorithm does not support re-configuration,
 // multiple values, more than N/2 failures, etc.
 type BasicPaxos struct {
-	// NoBackoff controls how a proposer deals with
-	// conflict.
-	// If set, proposers will not use any exponential
-	// backoff process.
-	NoBackoff bool
+	// Backoff controls the rate of exponential backoff.
+	// It is a coefficient for a 2^attempts term.
+	Backoff float64
 
 	// Timeout is the number of seconds to wait before
 	// giving up on a message.
@@ -32,7 +33,7 @@ func (b *BasicPaxos) Propose(h *simulator.Handle, n simulator.Network, p *simula
 	sendVal := &basicValue{value: value, size: size}
 	var round int
 	for i := 0; true; i++ {
-		// TODO: exponential backoff here.
+		b.backoff(h, i)
 
 		prepare := &basicPrepareReq{round: round}
 		for _, acc := range acceptors {
@@ -121,6 +122,15 @@ func (b *BasicPaxos) Accept(h *simulator.Handle, n simulator.Network, p *simulat
 			panic("unexpected message type")
 		}
 	}
+}
+
+// backoff performs exponential backoff if necessary.
+func (b *BasicPaxos) backoff(h *simulator.Handle, tryNumber int) {
+	if b.Backoff == 0 || tryNumber == 0 {
+		return
+	}
+	delay := rand.Float64() * b.Backoff * math.Pow(2.0, float64(tryNumber))
+	h.Sleep(delay)
 }
 
 // prepareResponses reads responses from a prepare step.
