@@ -46,7 +46,7 @@ func (b *BasicPaxos) Propose(h *simulator.Handle, n simulator.Network, p *simula
 
 		acceptorQuorum, prepResps := b.prepareResponses(h, p, acceptors, round)
 		if len(acceptorQuorum) < quorum {
-			round = essentials.MaxInt(round, basicPrepareNextRound(prepResps))
+			round = essentials.MaxInt(round+1, basicPrepareNextRound(prepResps))
 			continue
 		}
 
@@ -117,6 +117,8 @@ func (b *BasicPaxos) Accept(h *simulator.Handle, n simulator.Network, p *simulat
 				Size:    float64(response.Size()),
 				Message: response,
 			})
+		default:
+			panic("unexpected message type")
 		}
 	}
 }
@@ -139,11 +141,9 @@ func (b *BasicPaxos) prepareResponses(h *simulator.Handle, p *simulator.Port,
 		}
 		netMsg := msg.Message.(*simulator.Message)
 		if resp, ok := netMsg.Message.(*basicPrepareResp); ok {
-			if resp.currentRound == round {
-				responses = append(responses, resp)
-				if resp.success {
-					accPorts = append(accPorts, netMsg.Source)
-				}
+			responses = append(responses, resp)
+			if resp.success && resp.currentRound == round {
+				accPorts = append(accPorts, netMsg.Source)
 			}
 		}
 	}
@@ -215,7 +215,7 @@ func basicPrepareAcceptedValue(resps []*basicPrepareResp) *basicValue {
 	highest := -1
 	var value *basicValue
 	for _, r := range resps {
-		if r.acceptedRound > highest {
+		if r.acceptedRound > highest && r.acceptedValue != nil {
 			highest = r.acceptedRound
 			value = r.acceptedValue
 		}
