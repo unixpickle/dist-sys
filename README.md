@@ -14,6 +14,7 @@ The main goal of this repository is to play with distributed systems *without* n
 
  * [simulator](#simulator) - simulate a network of machines using "virtual" time.
  * [collcomm](#collcomm) - collective communications, e.g. "allreduce" to quickly sum large vectors across many machines.
+ * [paxos](paxos) - an implementation of the Paxos consensus algorithm.
 
 ## simulator
 
