@@ -9,6 +9,9 @@ The main goal of this repository is to play with distributed systems *without* n
    * [Wikipedia page](https://en.wikipedia.org/wiki/Paxos_(computer_science)#Multi-Paxos)
    * [Youtube - The Paxos Algorithm | Rachid Guerraoui](https://www.youtube.com/watch?v=WX4gjowx45E)
    * [Youtube - Paxos lecture (Raft user study)](https://www.youtube.com/watch?v=JEpsBg0AO6o)
+ * Distributed hashing
+   * [Consistent hashing - Wikipedia](https://en.wikipedia.org/wiki/Consistent_hashing)
+   * [Rendezvous hashing - Wikipedia](https://en.wikipedia.org/wiki/Rendezvous_hashing)
 
 # Packages
 
