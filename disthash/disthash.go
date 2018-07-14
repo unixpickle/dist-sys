@@ -10,7 +10,7 @@ import (
 // It assigns different keys to different nodes.
 type DistHash interface {
 	// AddSite adds a bucket to the hash table.
-	AddSite(node *simulator.Node, id Hasher) Hasher
+	AddSite(node *simulator.Node, id Hasher)
 
 	// RemoveSite removes a bucket from the hash table.
 	RemoveSite(node *simulator.Node)
