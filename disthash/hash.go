@@ -15,13 +15,13 @@ type Hasher interface {
 
 // A GobHasher hashes objects by encoding them as gobs.
 type GobHasher struct {
-	Object interface{}
+	V interface{}
 }
 
 // Hash returns the gob-encoded data.
 func (g *GobHasher) Hash() []byte {
 	var buf bytes.Buffer
-	if err := gob.NewEncoder(&buf).Encode(g.Object); err != nil {
+	if err := gob.NewEncoder(&buf).Encode(g.V); err != nil {
 		panic(err)
 	}
 	return buf.Bytes()
