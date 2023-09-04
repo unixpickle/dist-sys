@@ -17,12 +17,20 @@ type Leader[C Command, S StateMachine[C, S]] struct {
 	Log  *Log[C, S]
 	Term int64
 
+	// Settings
 	HeartbeatInterval float64
 
+	// followerLogIndices stores the latest of our log indices
+	// propagated to each follower. Starts at latest commit, and
+	// may be reduced or increased based on responses.
 	followerLogIndices []int64
-	timer              *simulator.Timer
-	timerStream        *simulator.EventStream
 
+	// Used for triggering AppendLogs heartbeats.
+	timer       *simulator.Timer
+	timerStream *simulator.EventStream
+
+	// Maps log indices to client connections for sending state
+	// machine results back to clients.
 	callbacks map[int64]*simulator.Port
 }
 
