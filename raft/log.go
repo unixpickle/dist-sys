@@ -29,6 +29,7 @@ type StateMachine[C Command, Self any] interface {
 type Log[C Command, S StateMachine[C, S]] struct {
 	Origin      S
 	OriginIndex int64
+	OriginTerm  int64
 
 	// Log entries starting from origin leading up to
 	// latest state.
@@ -36,6 +37,17 @@ type Log[C Command, S StateMachine[C, S]] struct {
 	LatestState S
 
 	CommitIndex int64
+}
+
+// LatestTermAndIndex gets the latest position in the log,
+// which can be used for leader election decisions.
+func (l *Log[C, S]) LatestTermAndIndex() (int64, int64) {
+	if len(l.Entries) == 0 {
+		return l.OriginTerm, l.OriginIndex
+	} else {
+		e := l.Entries[len(l.Entries)-1]
+		return e.Term, l.OriginIndex + int64(len(l.Entries))
+	}
 }
 
 // Commit caches log entries before a log index and
@@ -48,6 +60,7 @@ func (l *Log[C, S]) Commit(commitIndex int64) {
 		l.Origin.ApplyState(l.Entries[i+l.OriginIndex].Command)
 	}
 	l.Entries = append([]LogEntry[C]{}, l.Entries[commitIndex-l.OriginIndex:]...)
+	l.OriginTerm = l.Entries[commitIndex-l.OriginIndex].Term
 	l.OriginIndex = commitIndex
 	l.CommitIndex = commitIndex
 }
