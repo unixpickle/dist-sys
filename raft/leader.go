@@ -4,7 +4,7 @@ import (
 	"github.com/unixpickle/dist-sys/simulator"
 )
 
-type Leader[L LogEntry, S StateMachine[L, S]] struct {
+type Leader[C Command, S StateMachine[C, S]] struct {
 	// Network configuration
 	Handle    *simulator.Handle
 	Network   simulator.Network
@@ -12,7 +12,7 @@ type Leader[L LogEntry, S StateMachine[L, S]] struct {
 	Followers []*simulator.Port
 
 	// Algorithm state.
-	Log  *Log[L, S]
+	Log  *Log[C, S]
 	Term int64
 
 	HeartbeatInterval float64
@@ -23,7 +23,7 @@ type Leader[L LogEntry, S StateMachine[L, S]] struct {
 // RunLoop runs the leader loop until we stop being the
 // leader, at which point the first non-leader message is
 // returned.
-func (l *Leader[L, S]) RunLoop() *simulator.Message {
+func (l *Leader[C, S]) RunLoop() *simulator.Message {
 	l.followerLogIndices = make([]int64, len(l.Followers))
 	for i := range l.followerLogIndices {
 		l.followerLogIndices[i] = l.Log.CommitIndex
@@ -51,7 +51,7 @@ func (l *Leader[L, S]) RunLoop() *simulator.Message {
 	}
 }
 
-func (l *Leader[L, S]) handleMessage(rawMessage *simulator.Message) bool {
+func (l *Leader[C, S]) handleMessage(rawMessage *simulator.Message) bool {
 	followerIndex := -1
 	for i, f := range l.Followers {
 		if rawMessage.Source == f {
@@ -64,7 +64,7 @@ func (l *Leader[L, S]) handleMessage(rawMessage *simulator.Message) bool {
 	}
 
 	// Figure out what's going on.
-	msg := rawMessage.Message.(*RaftMessage[L, S])
+	msg := rawMessage.Message.(*RaftMessage[C, S])
 	if msg.Term() != l.Term {
 		return false
 	}
@@ -73,10 +73,10 @@ func (l *Leader[L, S]) handleMessage(rawMessage *simulator.Message) bool {
 	return true
 }
 
-func (l *Leader[L, S]) sendAppendLogs() {
+func (l *Leader[C, S]) sendAppendLogs() {
 	messages := make([]*simulator.Message, len(l.Followers))
 	for i, logIndex := range l.followerLogIndices {
-		msg := &RaftMessage[L, S]{AppendLogs: &AppendLogs[L, S]{
+		msg := &RaftMessage[C, S]{AppendLogs: &AppendLogs[C, S]{
 			Term:        l.Term,
 			CommitIndex: l.Log.CommitIndex,
 		}}
@@ -85,11 +85,11 @@ func (l *Leader[L, S]) sendAppendLogs() {
 			msg.AppendLogs.OriginIndex = l.Log.OriginIndex
 			originState := l.Log.Origin.Clone()
 			msg.AppendLogs.Origin = &originState
-			msg.AppendLogs.Entries = append([]L{}, l.Log.Entries...)
+			msg.AppendLogs.Entries = append([]LogEntry[C]{}, l.Log.Entries...)
 		} else {
 			msg.AppendLogs.OriginIndex = logIndex
 			msg.AppendLogs.Entries = append(
-				[]L{},
+				[]LogEntry[C]{},
 				msg.AppendLogs.Entries[int(logIndex-l.Log.OriginIndex):]...,
 			)
 		}
