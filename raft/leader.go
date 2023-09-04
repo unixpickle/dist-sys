@@ -22,6 +22,8 @@ type Leader[C Command, S StateMachine[C, S]] struct {
 	followerLogIndices []int64
 	timer              *simulator.Timer
 	timerStream        *simulator.EventStream
+
+	callbacks map[int64]*simulator.Port
 }
 
 // RunLoop runs the leader loop until we stop being the
@@ -64,7 +66,9 @@ func (l *Leader[C, S]) handleMessage(rawMessage *simulator.Message) bool {
 		}
 	}
 	if followerIndex == -1 {
-		panic("unknown source for message")
+		// This is from a client.
+		command := rawMessage.Message.(C)
+		l.handleCommand(rawMessage.Source, command)
 	}
 
 	msg := rawMessage.Message.(*RaftMessage[C, S])
@@ -91,6 +95,18 @@ func (l *Leader[C, S]) handleMessage(rawMessage *simulator.Message) bool {
 	}
 
 	return true
+}
+
+func (l *Leader[C, S]) handleCommand(port *simulator.Port, command C) {
+	idx := l.Log.Append(l.Term, command)
+	l.callbacks[idx] = port
+	l.sendAppendLogsAndResetTimer()
+}
+
+func (l *Leader[C, S]) sendAppendLogsAndResetTimer() {
+	l.Handle.Cancel(l.timer)
+	l.sendAppendLogs()
+	l.timer = l.Handle.Schedule(l.timerStream, nil, l.HeartbeatInterval)
 }
 
 func (l *Leader[C, S]) sendAppendLogs() {
@@ -144,12 +160,26 @@ func (l *Leader[C, S]) maybeAdvanceCommit() {
 	half := len(sorted) / 2
 	minCommit := sorted[half]
 
-	// TODO: send callbacks to succeeded client calls here
 	if minCommit > l.Log.CommitIndex {
-		l.Log.Commit(minCommit)
-	}
+		oldCommit := l.Log.CommitIndex
+		results := l.Log.Commit(minCommit)
 
-	l.Handle.Cancel(l.timer)
-	l.sendAppendLogs()
-	l.timer = l.Handle.Schedule(l.timerStream, nil, l.HeartbeatInterval)
+		// Now that we have committed, we can send results to clients.
+		var callbackMessages []*simulator.Message
+		for i, result := range results {
+			index := int64(i) + oldCommit
+			if cb, ok := l.callbacks[index]; ok {
+				callbackMessages = append(callbackMessages, &simulator.Message{
+					Source:  l.Port,
+					Dest:    cb,
+					Message: result,
+					Size:    float64(result.Size()),
+				})
+				delete(l.callbacks, index)
+			}
+		}
+		l.Network.Send(l.Handle, callbackMessages...)
+
+		l.sendAppendLogsAndResetTimer()
+	}
 }

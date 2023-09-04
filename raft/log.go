@@ -6,6 +6,11 @@ type Command interface {
 	Size() int
 }
 
+// Result is some result from a command.
+type Result interface {
+	Size() int
+}
+
 type LogEntry[C Command] struct {
 	Term    int64
 	Command C
@@ -19,7 +24,7 @@ func (l LogEntry[C]) Size() int {
 // can be mutated by log entries, and each state transition
 // may return some value.
 type StateMachine[C Command, Self any] interface {
-	ApplyState(C) any
+	ApplyState(C) Result
 	Size() int
 	Clone() Self
 }
@@ -33,8 +38,7 @@ type Log[C Command, S StateMachine[C, S]] struct {
 
 	// Log entries starting from origin leading up to
 	// latest state.
-	Entries     []LogEntry[C]
-	LatestState S
+	Entries []LogEntry[C]
 
 	CommitIndex int64
 }
@@ -52,15 +56,27 @@ func (l *Log[C, S]) LatestTermAndIndex() (int64, int64) {
 
 // Commit caches log entries before a log index and
 // advances the commit index.
-func (l *Log[C, S]) Commit(commitIndex int64) {
+func (l *Log[C, S]) Commit(commitIndex int64) []Result {
 	if commitIndex == l.OriginIndex {
-		return
+		return nil
 	}
+	var results []Result
 	for i := l.OriginIndex; i < commitIndex; i++ {
-		l.Origin.ApplyState(l.Entries[i+l.OriginIndex].Command)
+		results = append(results, l.Origin.ApplyState(l.Entries[i+l.OriginIndex].Command))
 	}
 	l.Entries = append([]LogEntry[C]{}, l.Entries[commitIndex-l.OriginIndex:]...)
 	l.OriginTerm = l.Entries[commitIndex-l.OriginIndex].Term
 	l.OriginIndex = commitIndex
 	l.CommitIndex = commitIndex
+	return results
+}
+
+// Append adds a command to the log and returns the index
+// of the resulting log entry.
+func (l *Log[C, S]) Append(term int64, command C) int64 {
+	l.Entries = append(l.Entries, LogEntry[C]{
+		Term:    term,
+		Command: command,
+	})
+	return l.OriginIndex + int64(len(l.Entries)-1)
 }
