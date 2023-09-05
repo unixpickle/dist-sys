@@ -1,12 +1,15 @@
 package raft
 
 import (
+	"context"
 	"sort"
 
 	"github.com/unixpickle/dist-sys/simulator"
 )
 
 type Leader[C Command, S StateMachine[C, S]] struct {
+	Context context.Context
+
 	// Network configuration
 	Handle    *simulator.Handle
 	Network   simulator.Network
@@ -54,6 +57,11 @@ func (l *Leader[C, S]) RunLoop() *simulator.Message {
 		l.sendAppendLogs()
 
 		event := l.Handle.Poll(l.timerStream, l.Port.Incoming)
+		select {
+		case <-l.Context.Done():
+			return nil
+		default:
+		}
 		if event.Stream == l.timerStream {
 			l.timer = l.Handle.Schedule(l.timerStream, nil, l.HeartbeatInterval)
 			l.sendAppendLogs()

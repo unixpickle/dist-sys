@@ -1,8 +1,13 @@
 package raft
 
-import "github.com/unixpickle/dist-sys/simulator"
+import (
+	"context"
+
+	"github.com/unixpickle/dist-sys/simulator"
+)
 
 type Candidate[C Command, S StateMachine[C, S]] struct {
+	Context context.Context
 	Handle  *simulator.Handle
 	Network simulator.Network
 	Port    *simulator.Port
@@ -38,6 +43,11 @@ func (c *Candidate[C, S]) RunLoop() *simulator.Message {
 	numVotes := 0
 	for {
 		result := c.Handle.Poll(c.timerStream, c.Port.Incoming)
+		select {
+		case <-c.Context.Done():
+			return nil
+		default:
+		}
 		if result.Stream == c.timerStream {
 			c.Term++
 			c.timer = c.Handle.Schedule(c.timerStream, nil, c.ElectionTimeout)

@@ -1,8 +1,13 @@
 package raft
 
-import "github.com/unixpickle/dist-sys/simulator"
+import (
+	"context"
+
+	"github.com/unixpickle/dist-sys/simulator"
+)
 
 type Raft[C Command, S StateMachine[C, S]] struct {
+	Context context.Context
 	Handle  *simulator.Handle
 	Network simulator.Network
 	Port    *simulator.Port
@@ -21,6 +26,7 @@ func (r *Raft[C, S]) RunLoop() {
 	var followerMsg *simulator.Message
 	for {
 		f := &Follower[C, S]{
+			Context: r.Context,
 			Handle:  r.Handle,
 			Network: r.Network,
 			Port:    r.Port,
@@ -31,9 +37,15 @@ func (r *Raft[C, S]) RunLoop() {
 			ElectionTimeout: r.ElectionTimeout,
 		}
 		f.RunLoop(followerMsg)
+		select {
+		case <-r.Context.Done():
+			return
+		default:
+		}
 		r.Term = f.Term + 1
 
 		c := &Candidate[C, S]{
+			Context: r.Context,
 			Handle:  r.Handle,
 			Network: r.Network,
 			Port:    r.Port,
@@ -44,8 +56,14 @@ func (r *Raft[C, S]) RunLoop() {
 			ElectionTimeout: r.ElectionTimeout,
 		}
 		followerMsg = c.RunLoop()
+		select {
+		case <-r.Context.Done():
+			return
+		default:
+		}
 		if followerMsg == nil {
 			followerMsg = (&Leader[C, S]{
+				Context:   r.Context,
 				Handle:    r.Handle,
 				Network:   r.Network,
 				Port:      r.Port,
@@ -55,6 +73,11 @@ func (r *Raft[C, S]) RunLoop() {
 
 				HeartbeatInterval: r.HeartbeatInterval,
 			}).RunLoop()
+			select {
+			case <-r.Context.Done():
+				return
+			default:
+			}
 		}
 	}
 }

@@ -1,8 +1,13 @@
 package raft
 
-import "github.com/unixpickle/dist-sys/simulator"
+import (
+	"context"
+
+	"github.com/unixpickle/dist-sys/simulator"
+)
 
 type Follower[C Command, S StateMachine[C, S]] struct {
+	Context context.Context
 	Handle  *simulator.Handle
 	Network simulator.Network
 	Port    *simulator.Port
@@ -36,6 +41,11 @@ func (f *Follower[C, S]) RunLoop(initialMessage *simulator.Message) {
 
 	for {
 		result := f.Handle.Poll(f.timerStream, f.Port.Incoming)
+		select {
+		case <-f.Context.Done():
+			return
+		default:
+		}
 		if result.Stream == f.timerStream {
 			return
 		}

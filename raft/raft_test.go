@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"context"
 	"strconv"
 	"testing"
 
@@ -32,6 +33,8 @@ func testRaftSimpleCase(t *testing.T, numNodes int, randomized bool) {
 		network = simulator.NewSwitcherNetwork(switcher, nodes, 0.1)
 	}
 
+	context, cancelFn := context.WithCancel(context.Background())
+
 	for i := 0; i < numNodes; i++ {
 		index := i
 		loop.Go(func(h *simulator.Handle) {
@@ -45,6 +48,7 @@ func testRaftSimpleCase(t *testing.T, numNodes int, randomized bool) {
 				}
 			}
 			(&Raft[HashMapCommand, *HashMap]{
+				Context: context,
 				Handle:  h,
 				Network: network,
 				Port:    port,
@@ -61,6 +65,7 @@ func testRaftSimpleCase(t *testing.T, numNodes int, randomized bool) {
 	// Make sure we can actually push states.
 	clientPort := ports[len(ports)-1]
 	loop.Go(func(h *simulator.Handle) {
+		defer cancelFn()
 		client := &Client[HashMapCommand]{
 			Handle:      h,
 			Network:     network,
@@ -76,4 +81,6 @@ func testRaftSimpleCase(t *testing.T, numNodes int, randomized bool) {
 			}
 		}
 	})
+
+	loop.MustRun()
 }
