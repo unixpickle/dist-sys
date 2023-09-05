@@ -2,6 +2,7 @@ package raft
 
 import (
 	"context"
+	"math/rand"
 
 	"github.com/unixpickle/dist-sys/simulator"
 )
@@ -84,6 +85,10 @@ func (f *Follower[C, S]) handleCommand(source *simulator.Port, msg *CommandMessa
 	var leader *simulator.Node
 	if f.leader != nil {
 		leader = f.leader.Node
+	} else {
+		// Redirect to some random other node.
+		// Eventually the message will find its way.
+		leader = f.Others[rand.Intn(len(f.Others))].Node
 	}
 	resp := &CommandResponse{
 		ID:       msg.ID,
