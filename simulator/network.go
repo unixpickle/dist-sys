@@ -319,8 +319,8 @@ func (o *OrderedNetwork) Send(h *Handle, msgs ...*Message) {
 			h.Schedule(msg.Dest.Incoming, msg, delay)
 			o.nextTimes[dest] = curTime + delay
 		} else {
-			h.Schedule(msg.Dest.Incoming, msg, t+delay)
-			o.nextTimes[dest] = delay + (t - curTime)
+			h.Schedule(msg.Dest.Incoming, msg, delay+(t-curTime))
+			o.nextTimes[dest] = delay + t
 		}
 	}
 }

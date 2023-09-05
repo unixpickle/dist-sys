@@ -109,9 +109,7 @@ func (f *Follower[C, S]) handleAppendLogs(source *simulator.Port, msg *AppendLog
 	lastIndex, lastTerm := f.Log.LatestTermAndIndex()
 	newIndex := msg.OriginIndex + int64(len(msg.Entries))
 	if lastTerm == msg.Term && lastIndex > newIndex {
-		// Don't allow later log messages to be overwritten
-		// by out-of-order messages from the leader.
-		return
+		panic("out-of-order message detected from the leader")
 	}
 
 	if msg.Origin != nil {
