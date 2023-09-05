@@ -55,6 +55,8 @@ type Leader[C Command, S StateMachine[C, S]] struct {
 // leader, at which point the first non-leader message is
 // returned.
 func (l *Leader[C, S]) RunLoop() *simulator.Message {
+	l.callbacks = map[int64]*simulator.Port{}
+	l.commandIDs = map[int64]string{}
 	l.followerKnownLogIndices = make([]int64, len(l.Followers))
 	l.followerSentLogIndices = make([]int64, len(l.Followers))
 	l.lastSeqNums = make([]int64, len(l.Followers))
@@ -219,18 +221,15 @@ func (l *Leader[C, S]) appendLogsForFollower(i int) *RaftMessage[C, S] {
 		msg.AppendLogs.Entries = append([]LogEntry[C]{}, l.Log.Entries...)
 	} else if logIndex > l.Log.OriginIndex {
 		msg.AppendLogs.OriginIndex = logIndex
-		msg.AppendLogs.OriginTerm = msg.AppendLogs.Entries[logIndex-l.Log.OriginIndex-1].Term
+		msg.AppendLogs.OriginTerm = l.Log.Entries[logIndex-l.Log.OriginIndex-1].Term
 		msg.AppendLogs.Entries = append(
 			[]LogEntry[C]{},
-			msg.AppendLogs.Entries[logIndex-l.Log.OriginIndex:]...,
+			l.Log.Entries[logIndex-l.Log.OriginIndex:]...,
 		)
 	} else {
 		msg.AppendLogs.OriginIndex = l.Log.OriginIndex
 		msg.AppendLogs.OriginTerm = l.Log.OriginTerm
-		msg.AppendLogs.Entries = append(
-			[]LogEntry[C]{},
-			msg.AppendLogs.Entries[:]...,
-		)
+		msg.AppendLogs.Entries = append([]LogEntry[C]{}, l.Log.Entries...)
 	}
 	return msg
 }
@@ -244,7 +243,7 @@ func (l *Leader[C, S]) maybeAdvanceCommit() {
 	minCommit := sorted[half]
 
 	if minCommit > l.Log.OriginIndex {
-		commitEntry := l.Log.Entries[minCommit-l.Log.OriginIndex]
+		commitEntry := l.Log.Entries[minCommit-l.Log.OriginIndex-1]
 		if commitEntry.Term != l.Term {
 			// We can only safely commit log entries from the
 			// current term, and previous entries will be

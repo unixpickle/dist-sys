@@ -67,10 +67,10 @@ func (l *Log[C, S]) Commit(commitIndex int64) []Result {
 	}
 	var results []Result
 	for i := l.OriginIndex; i < commitIndex; i++ {
-		results = append(results, l.Origin.ApplyState(l.Entries[i+l.OriginIndex].Command))
+		results = append(results, l.Origin.ApplyState(l.Entries[i-l.OriginIndex].Command))
 	}
+	l.OriginTerm = l.Entries[commitIndex-l.OriginIndex-1].Term
 	l.Entries = append([]LogEntry[C]{}, l.Entries[commitIndex-l.OriginIndex:]...)
-	l.OriginTerm = l.Entries[commitIndex-l.OriginIndex].Term
 	l.OriginIndex = commitIndex
 	return results
 }
