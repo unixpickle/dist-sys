@@ -8,7 +8,10 @@ import (
 	"github.com/unixpickle/dist-sys/simulator"
 )
 
-var ErrClientTimeout = errors.New("raft server did not respond")
+var (
+	ErrClientTimeout = errors.New("raft server did not respond")
+	ErrLeaderUnknown = errors.New("raft leader is not currently known")
+)
 
 type Client[C Command] struct {
 	Handle  *simulator.Handle
@@ -57,6 +60,12 @@ func (c *Client[C]) Send(command C, numAttempts int) (Result, error) {
 			if madeAttempts == numAttempts {
 				return nil, err
 			}
+			if err == ErrLeaderUnknown {
+				// Wait some time for the cluster to come back up.
+				c.Handle.Sleep(c.SendTimeout)
+			}
+			c.timer = c.Handle.Schedule(c.timerStream, nil, c.SendTimeout)
+			c.leader = c.Servers[rand.Intn(len(c.Servers))]
 		} else if redir != nil {
 			c.leader = nil
 			for _, p := range c.Servers {
@@ -95,6 +104,8 @@ func (c *Client[C]) waitForResult(id string) (res Result, redir *simulator.Node,
 			}
 			if obj.Redirect != nil {
 				return nil, obj.Redirect, nil
+			} else if obj.LeaderUnknown {
+				return nil, nil, ErrLeaderUnknown
 			} else {
 				return obj.Result, nil, nil
 			}

@@ -74,9 +74,9 @@ func (l *Leader[C, S]) RunLoop() *simulator.Message {
 		l.Handle.Cancel(l.timer)
 	}()
 
-	for {
-		l.sendAppendLogs()
+	l.sendAppendLogs()
 
+	for {
 		event := l.Handle.Poll(l.timerStream, l.Port.Incoming)
 		select {
 		case <-l.Context.Done():

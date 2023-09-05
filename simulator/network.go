@@ -324,3 +324,9 @@ func (o *OrderedNetwork) Send(h *Handle, msgs ...*Message) {
 		}
 	}
 }
+
+func (o *OrderedNetwork) SetDown(node *Node, down bool) {
+	o.lock.Lock()
+	defer o.lock.Unlock()
+	o.downNodes[node] = down
+}

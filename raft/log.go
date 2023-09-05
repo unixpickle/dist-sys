@@ -62,7 +62,7 @@ func (l *Log[C, S]) LatestTermAndIndex() (int64, int64) {
 // Commit caches log entries before a log index and
 // advances the commit index.
 func (l *Log[C, S]) Commit(commitIndex int64) []Result {
-	if commitIndex == l.OriginIndex {
+	if commitIndex <= l.OriginIndex {
 		return nil
 	}
 	var results []Result

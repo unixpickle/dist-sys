@@ -120,9 +120,10 @@ type CommandMessage[C Command] struct {
 }
 
 type CommandResponse struct {
-	ID       string
-	Result   Result          // non-nil if Redirect is None
-	Redirect *simulator.Node // non-nil if this is no longer the leader
+	ID            string
+	Result        Result          // non-nil if Redirect is nil and Unknown is false
+	LeaderUnknown bool            // if true, the leader is not known
+	Redirect      *simulator.Node // non-nil if this is no longer the leader
 }
 
 func (c *CommandResponse) Size() int {
