@@ -90,6 +90,9 @@ func (f *Follower[C, S]) handleAppendLogs(source *simulator.Port, msg *AppendLog
 	f.resetTimer()
 	f.leader = source
 
+	// TODO: don't allow later log messages to be overwritten
+	// by out-of-order messages from the leader.
+
 	if msg.Origin != nil {
 		// This is the easy case: they are forcing our log to be
 		// in a particular state.

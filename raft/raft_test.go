@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/unixpickle/dist-sys/simulator"
@@ -60,6 +61,19 @@ func testRaftSimpleCase(t *testing.T, numNodes int, randomized bool) {
 	// Make sure we can actually push states.
 	clientPort := ports[len(ports)-1]
 	loop.Go(func(h *simulator.Handle) {
-		// TODO: construct a client and send requests.
+		client := &Client[HashMapCommand]{
+			Handle:      h,
+			Network:     network,
+			Port:        clientPort,
+			Servers:     ports[:len(ports)-1],
+			SendTimeout: 10,
+		}
+		for i := 0; i < 10; i++ {
+			value := "hello" + strconv.Itoa(i)
+			_, err := client.Send(HashMapCommand{Key: strconv.Itoa(i), Value: value}, 0)
+			if err != nil {
+				panic(err)
+			}
+		}
 	})
 }
