@@ -86,6 +86,7 @@ func (f *Follower[C, S]) handleCommand(source *simulator.Port, msg *CommandMessa
 		leader = f.leader.Node
 	}
 	resp := &CommandResponse{
+		ID:       msg.ID,
 		Redirect: leader,
 	}
 	f.Network.Send(f.Handle, &simulator.Message{
