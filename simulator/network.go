@@ -276,3 +276,51 @@ func messagesWithLowestETA(msgs []*switchedMsg) (lowest, rest []*switchedMsg, lo
 
 	return lowest, rest, lowestETA
 }
+
+// An OrderedNetwork delivers messages sent to endpoints in
+// order, while allowing non-determinism and temporarily
+// disconnected nodes.
+type OrderedNetwork struct {
+	Rate             float64
+	MaxRandomLatency float64
+
+	lock      sync.Mutex
+	nextTimes map[*Node]float64
+	downNodes map[*Node]bool
+}
+
+func NewOrderedNetwork(rate float64, maxRandomLatency float64) *OrderedNetwork {
+	return &OrderedNetwork{
+		Rate:             rate,
+		MaxRandomLatency: maxRandomLatency,
+		nextTimes:        map[*Node]float64{},
+		downNodes:        map[*Node]bool{},
+	}
+}
+
+// Send sends the messages over the network in order.
+func (o *OrderedNetwork) Send(h *Handle, msgs ...*Message) {
+	o.lock.Lock()
+	defer o.lock.Unlock()
+
+	curTime := h.Time()
+
+	for _, msg := range msgs {
+		dest := msg.Dest.Node
+		if sourceDown, _ := o.downNodes[msg.Source.Node]; sourceDown {
+			continue
+		}
+		if destDown, _ := o.downNodes[dest]; destDown {
+			continue
+		}
+		latency := rand.Float64() * o.MaxRandomLatency
+		delay := latency + msg.Size/o.Rate
+		if t, ok := o.nextTimes[dest]; !ok || t <= curTime {
+			h.Schedule(msg.Dest.Incoming, msg, delay)
+			o.nextTimes[dest] = curTime + delay
+		} else {
+			h.Schedule(msg.Dest.Incoming, msg, t+delay)
+			o.nextTimes[dest] = delay + (t - curTime)
+		}
+	}
+}
