@@ -148,8 +148,10 @@ func (f *Follower[C, S]) handleAppendLogs(source *simulator.Port, msg *AppendLog
 			f.Log.Entries = msg.Entries[f.Log.OriginIndex-msg.OriginIndex:]
 			f.Log.Commit(msg.CommitIndex)
 		} else {
-			// The sender actually truncated our logs.
-			f.Log.Entries = []LogEntry[C]{}
+			// The sender actually truncated our logs, meaning
+			// they do not have a commit as far as we do.
+			panic("this should not happen")
+			// f.Log.Entries = []LogEntry[C]{}
 		}
 		resp.AppendLogsResponse.Success = true
 	} else {
@@ -178,6 +180,13 @@ func (f *Follower[C, S]) handleAppendLogs(source *simulator.Port, msg *AppendLog
 
 	resp.AppendLogsResponse.CommitIndex = f.Log.OriginIndex
 	_, resp.AppendLogsResponse.LatestIndex = f.Log.LatestTermAndIndex()
+
+	f.Network.Send(f.Handle, &simulator.Message{
+		Source:  f.Port,
+		Dest:    source,
+		Message: resp,
+		Size:    float64(resp.Size()),
+	})
 }
 
 func (f *Follower[C, S]) handleVote(source *simulator.Port, msg *Vote) {
