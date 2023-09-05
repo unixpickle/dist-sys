@@ -2,6 +2,7 @@ package raft
 
 import (
 	"context"
+	"math"
 	"sort"
 
 	"github.com/unixpickle/dist-sys/simulator"
@@ -23,10 +24,22 @@ type Leader[C Command, S StateMachine[C, S]] struct {
 	// Settings
 	HeartbeatInterval float64
 
-	// followerLogIndices stores the latest of our log indices
-	// propagated to each follower. Starts at latest commit, and
-	// may be reduced or increased based on responses.
-	followerLogIndices []int64
+	// followerKnownLogIndices stores the latest of our log
+	// indices confirmed by each follower. Starts at latest
+	// commit, and may be reduced or increased based on
+	// responses.
+	followerKnownLogIndices []int64
+
+	// followerSentLogIndices is like the above field, but
+	// may be higher if we have sent some log entries that
+	// have not been acknowledged.
+	followerSentLogIndices []int64
+
+	// Used to track when to send new AppendLogs and
+	// determine if a response is stale.
+	seqNum       int64
+	lastSeqNums  []int64
+	lastSentTime []float64
 
 	// Used for triggering AppendLogs heartbeats.
 	timer       *simulator.Timer
@@ -42,12 +55,18 @@ type Leader[C Command, S StateMachine[C, S]] struct {
 // leader, at which point the first non-leader message is
 // returned.
 func (l *Leader[C, S]) RunLoop() *simulator.Message {
-	l.followerLogIndices = make([]int64, len(l.Followers))
-	for i := range l.followerLogIndices {
-		l.followerLogIndices[i] = l.Log.OriginIndex
+	l.followerKnownLogIndices = make([]int64, len(l.Followers))
+	l.followerSentLogIndices = make([]int64, len(l.Followers))
+	l.lastSeqNums = make([]int64, len(l.Followers))
+	l.lastSentTime = make([]float64, len(l.Followers))
+	l.seqNum = 1
+	for i := 0; i < len(l.Followers); i++ {
+		l.followerKnownLogIndices[i] = l.Log.OriginIndex
+		l.followerSentLogIndices[i] = l.Log.OriginIndex
+		l.lastSentTime[i] = math.Inf(-1)
 	}
 	l.timerStream = l.Handle.Stream()
-	l.timer = l.Handle.Schedule(l.timerStream, nil, l.HeartbeatInterval)
+	l.timer = l.Handle.Schedule(l.timerStream, nil, l.HeartbeatInterval/2)
 	defer func() {
 		// Timer will be updated every time it fires.
 		l.Handle.Cancel(l.timer)
@@ -63,7 +82,7 @@ func (l *Leader[C, S]) RunLoop() *simulator.Message {
 		default:
 		}
 		if event.Stream == l.timerStream {
-			l.timer = l.Handle.Schedule(l.timerStream, nil, l.HeartbeatInterval)
+			l.timer = l.Handle.Schedule(l.timerStream, nil, l.HeartbeatInterval/2)
 			l.sendAppendLogs()
 		} else {
 			msg := event.Message.(*simulator.Message)
@@ -97,20 +116,41 @@ func (l *Leader[C, S]) handleMessage(rawMessage *simulator.Message) bool {
 		return true
 	}
 
-	if resp.Success {
-		l.followerLogIndices[followerIndex] = resp.LatestIndex
-		l.maybeAdvanceCommit()
-	} else {
-		l.followerLogIndices[followerIndex] = resp.CommitIndex
-		msg := l.appendLogsForFollower(followerIndex)
-		rawMsg := &simulator.Message{
-			Source:  l.Port,
-			Dest:    l.Followers[followerIndex],
-			Message: msg,
-			Size:    float64(msg.Size()),
-		}
-		l.Network.Send(l.Handle, rawMsg)
+	if resp.SeqNum != l.lastSeqNums[followerIndex] {
+		// This is a stale response.
+		return true
 	}
+
+	// Make note that no message is in flight so that we are
+	// now free to send more messages.
+	l.lastSeqNums[followerIndex] = 0
+
+	if resp.Success {
+		l.followerKnownLogIndices[followerIndex] = resp.LatestIndex
+		l.maybeAdvanceCommit()
+
+		if l.lastSeqNums[followerIndex] != 0 ||
+			l.followerSentLogIndices[followerIndex] == l.Log.OriginIndex+int64(len(l.Log.Entries)) {
+			// This follower is now up-to-date or is being
+			// updated by a commit AppendLogs message.
+			return true
+		}
+	} else {
+		l.followerKnownLogIndices[followerIndex] = resp.CommitIndex
+		l.followerSentLogIndices[followerIndex] = resp.CommitIndex
+	}
+
+	// If we are here, there is more to send to this follower,
+	// either because it failed to handle the last message, or
+	// because new entries have been added since.
+	msg = l.appendLogsForFollower(followerIndex)
+	rawMsg := &simulator.Message{
+		Source:  l.Port,
+		Dest:    l.Followers[followerIndex],
+		Message: msg,
+		Size:    float64(msg.Size()),
+	}
+	l.Network.Send(l.Handle, rawMsg)
 
 	return true
 }
@@ -119,18 +159,28 @@ func (l *Leader[C, S]) handleCommand(port *simulator.Port, command *CommandMessa
 	idx := l.Log.Append(l.Term, command.Command)
 	l.callbacks[idx] = port
 	l.commandIDs[idx] = command.ID
-	l.sendAppendLogsAndResetTimer()
+	l.sendFreshAppendLogs()
 }
 
-func (l *Leader[C, S]) sendAppendLogsAndResetTimer() {
-	l.Handle.Cancel(l.timer)
+func (l *Leader[C, S]) sendFreshAppendLogs() {
+	for i, lastSent := range l.lastSeqNums {
+		if lastSent != 0 {
+			// A message is in flight, so we won't send a new one
+			// until we get an ack.
+			continue
+		}
+		l.lastSentTime[i] = math.Inf(-1)
+	}
 	l.sendAppendLogs()
-	l.timer = l.Handle.Schedule(l.timerStream, nil, l.HeartbeatInterval)
 }
 
 func (l *Leader[C, S]) sendAppendLogs() {
 	messages := make([]*simulator.Message, 0, len(l.Followers))
 	for i, port := range l.Followers {
+		if l.Handle.Time() < l.lastSentTime[i]+l.HeartbeatInterval/2 {
+			// Don't send redundant messages if a keepalive is unneeded.
+			continue
+		}
 		msg := l.appendLogsForFollower(i)
 		messages = append(messages, &simulator.Message{
 			Source:  l.Port,
@@ -142,12 +192,24 @@ func (l *Leader[C, S]) sendAppendLogs() {
 	l.Network.Send(l.Handle, messages...)
 }
 
+// appendLogsForFollower creates an AppendLogs message and
+// updates our message book-keeping under the assumption
+// that the message will be sent.
 func (l *Leader[C, S]) appendLogsForFollower(i int) *RaftMessage[C, S] {
-	logIndex := l.followerLogIndices[i]
+	logIndex := l.followerSentLogIndices[i]
 	msg := &RaftMessage[C, S]{AppendLogs: &AppendLogs[C, S]{
 		Term:        l.Term,
+		SeqNum:      l.seqNum,
 		CommitIndex: l.Log.OriginIndex,
 	}}
+
+	// Book-keeping under the assumption that we will send
+	// this message.
+	l.lastSeqNums[i] = l.seqNum
+	l.lastSentTime[i] = l.Handle.Time()
+	l.followerSentLogIndices[i] = l.Log.OriginIndex + int64(len(l.Log.Entries))
+	l.seqNum++
+
 	if logIndex < l.Log.OriginIndex {
 		// We must include the entire state machine.
 		msg.AppendLogs.OriginIndex = l.Log.OriginIndex
@@ -174,7 +236,7 @@ func (l *Leader[C, S]) appendLogsForFollower(i int) *RaftMessage[C, S] {
 }
 
 func (l *Leader[C, S]) maybeAdvanceCommit() {
-	sorted := append([]int64{}, l.followerLogIndices...)
+	sorted := append([]int64{}, l.followerKnownLogIndices...)
 	sort.Slice(sorted, func(i int, j int) bool {
 		return sorted[i] < sorted[j]
 	})
@@ -211,7 +273,7 @@ func (l *Leader[C, S]) maybeAdvanceCommit() {
 		}
 		l.Network.Send(l.Handle, callbackMessages...)
 
-		l.sendAppendLogsAndResetTimer()
+		l.sendFreshAppendLogs()
 	}
 }
 

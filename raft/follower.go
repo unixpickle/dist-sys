@@ -120,6 +120,7 @@ func (f *Follower[C, S]) handleAppendLogs(source *simulator.Port, msg *AppendLog
 		resp := &RaftMessage[C, S]{
 			AppendLogsResponse: &AppendLogsResponse[C, S]{
 				Term:        f.Term,
+				SeqNum:      msg.SeqNum,
 				CommitIndex: msg.CommitIndex,
 				LatestIndex: latestIndex,
 				Success:     true,
@@ -137,6 +138,7 @@ func (f *Follower[C, S]) handleAppendLogs(source *simulator.Port, msg *AppendLog
 	resp := &RaftMessage[C, S]{
 		AppendLogsResponse: &AppendLogsResponse[C, S]{
 			Term:    f.Term,
+			SeqNum:  msg.SeqNum,
 			Success: false,
 		},
 	}

@@ -41,6 +41,10 @@ type AppendLogs[C Command, S StateMachine[C, S]] struct {
 	Term        int64
 	CommitIndex int64
 
+	// SeqNum is unique per term and helps leaders
+	// determine if this is a stale response.
+	SeqNum int64
+
 	// OriginTerm is the term of the message corresponding
 	// to the origin.
 	OriginTerm int64
@@ -78,6 +82,7 @@ type AppendLogsResponse[C Command, S StateMachine[C, S]] struct {
 	Term        int64
 	CommitIndex int64
 	LatestIndex int64
+	SeqNum      int64
 
 	// Success will be false if there was not enough
 	// data to fill in the logs.

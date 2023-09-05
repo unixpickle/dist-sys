@@ -25,13 +25,15 @@ func testRaftSimpleCase(t *testing.T, numNodes int, randomized bool) {
 		nodes = append(nodes, simulator.NewNode())
 		ports = append(ports, nodes[len(nodes)-1].Port(loop))
 	}
-	var network simulator.Network
+
+	// The network is always ordered, but may have random latency.
+	var latency float64
 	if randomized {
-		network = simulator.RandomNetwork{}
+		latency = 0.1
 	} else {
-		switcher := simulator.NewGreedyDropSwitcher(len(nodes), 1e6)
-		network = simulator.NewSwitcherNetwork(switcher, nodes, 0.1)
+		latency = 0.0
 	}
+	network := simulator.NewOrderedNetwork(1e6, latency)
 
 	context, cancelFn := context.WithCancel(context.Background())
 
