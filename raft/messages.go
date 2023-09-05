@@ -1,15 +1,24 @@
 package raft
 
+import "github.com/unixpickle/dist-sys/simulator"
+
 type RaftMessage[C Command, S StateMachine[C, S]] struct {
 	AppendLogs         *AppendLogs[C, S]
 	AppendLogsResponse *AppendLogsResponse[C, S]
+	Vote               *Vote
+	VoteResponse       *VoteResponse
 }
 
 func (r *RaftMessage[C, S]) Size() int {
+	headerSize := 1
 	if r.AppendLogs != nil {
-		return r.AppendLogs.Size()
+		return headerSize + r.AppendLogs.Size()
 	} else if r.AppendLogsResponse != nil {
-		return r.AppendLogsResponse.Size()
+		return headerSize + r.AppendLogsResponse.Size()
+	} else if r.Vote != nil {
+		return headerSize + r.Vote.Size()
+	} else if r.VoteResponse != nil {
+		return headerSize + r.VoteResponse.Size()
 	}
 	panic("unknown message type")
 }
@@ -19,6 +28,10 @@ func (r *RaftMessage[C, S]) Term() int64 {
 		return r.AppendLogs.Term
 	} else if r.AppendLogsResponse != nil {
 		return r.AppendLogsResponse.Term
+	} else if r.Vote != nil {
+		return r.Vote.Term
+	} else if r.VoteResponse != nil {
+		return r.VoteResponse.Term
 	}
 	panic("unknown message type")
 }
@@ -28,6 +41,16 @@ type AppendLogs[C Command, S StateMachine[C, S]] struct {
 	Term        int64
 	CommitIndex int64
 
+	// OriginTerm is the term of the message corresponding
+	// to the origin.
+	OriginTerm int64
+
+	// OriginIndex may be different than CommitIndex if we
+	// are sending newer entries to this worker than are in
+	// the committed state machine.
+	//
+	// In this case, it will be greater than CommitIndex,
+	// and Origin will be nil.
 	OriginIndex int64
 
 	// Origin may be specified if we are too far behind.
@@ -63,4 +86,40 @@ type AppendLogsResponse[C Command, S StateMachine[C, S]] struct {
 
 func (a *AppendLogsResponse[C, S]) Size() int {
 	return 8 * 3
+}
+
+type Vote struct {
+	Term int64
+
+	// Last log message
+	LatestTerm  int64
+	LatestIndex int64
+}
+
+func (v *Vote) Size() int {
+	return 8 * 3
+}
+
+type VoteResponse struct {
+	Term         int64
+	ReceivedVote bool
+}
+
+func (v *VoteResponse) Size() int {
+	return 8 + 1
+}
+
+type CommandResponse[C Command] struct {
+	Result   Result          // non-nil if Redirect is None
+	Redirect *simulator.Node // non-nil if this is no longer the leader
+}
+
+func (c CommandResponse[C]) Size() int {
+	if c.Result != nil {
+		// Result size + header
+		return 1 + c.Result.Size()
+	} else {
+		// IPv4 + port number + header
+		return 1 + 6
+	}
 }

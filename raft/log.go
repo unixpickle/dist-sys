@@ -32,15 +32,20 @@ type StateMachine[C Command, Self any] interface {
 // A Log stores a state machine and log entries which are
 // applied to it.
 type Log[C Command, S StateMachine[C, S]] struct {
-	Origin      S
+	// Origin is the state machine up to the last committed
+	// state.
+	Origin S
+
+	// OriginIndex is the index of the next log index.
 	OriginIndex int64
-	OriginTerm  int64
+
+	// OriginTerm is the term of the latest log message
+	// that was applied to the state machine.
+	OriginTerm int64
 
 	// Log entries starting from origin leading up to
 	// latest state.
 	Entries []LogEntry[C]
-
-	CommitIndex int64
 }
 
 // LatestTermAndIndex gets the latest position in the log,
@@ -67,7 +72,6 @@ func (l *Log[C, S]) Commit(commitIndex int64) []Result {
 	l.Entries = append([]LogEntry[C]{}, l.Entries[commitIndex-l.OriginIndex:]...)
 	l.OriginTerm = l.Entries[commitIndex-l.OriginIndex].Term
 	l.OriginIndex = commitIndex
-	l.CommitIndex = commitIndex
 	return results
 }
 

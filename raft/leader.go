@@ -40,7 +40,7 @@ type Leader[C Command, S StateMachine[C, S]] struct {
 func (l *Leader[C, S]) RunLoop() *simulator.Message {
 	l.followerLogIndices = make([]int64, len(l.Followers))
 	for i := range l.followerLogIndices {
-		l.followerLogIndices[i] = l.Log.CommitIndex
+		l.followerLogIndices[i] = l.Log.OriginIndex
 	}
 	l.timerStream = l.Handle.Stream()
 	l.timer = l.Handle.Schedule(l.timerStream, nil, l.HeartbeatInterval)
@@ -66,17 +66,11 @@ func (l *Leader[C, S]) RunLoop() *simulator.Message {
 }
 
 func (l *Leader[C, S]) handleMessage(rawMessage *simulator.Message) bool {
-	followerIndex := -1
-	for i, f := range l.Followers {
-		if rawMessage.Source == f {
-			followerIndex = i
-			break
-		}
-	}
+	followerIndex := sourcePortIndex(rawMessage, l.Followers)
 	if followerIndex == -1 {
-		// This is from a client.
 		command := rawMessage.Message.(C)
 		l.handleCommand(rawMessage.Source, command)
+		return true
 	}
 
 	msg := rawMessage.Message.(*RaftMessage[C, S])
@@ -87,6 +81,13 @@ func (l *Leader[C, S]) handleMessage(rawMessage *simulator.Message) bool {
 	}
 
 	resp := msg.AppendLogsResponse
+
+	if resp == nil {
+		// This could be a residual vote from this term after
+		// we had enough votes to become leader.
+		return true
+	}
+
 	if resp.Success {
 		l.followerLogIndices[followerIndex] = resp.LatestIndex
 		l.maybeAdvanceCommit()
@@ -135,32 +136,27 @@ func (l *Leader[C, S]) appendLogsForFollower(i int) *RaftMessage[C, S] {
 	logIndex := l.followerLogIndices[i]
 	msg := &RaftMessage[C, S]{AppendLogs: &AppendLogs[C, S]{
 		Term:        l.Term,
-		CommitIndex: l.Log.CommitIndex,
+		CommitIndex: l.Log.OriginIndex,
 	}}
 	if logIndex < l.Log.OriginIndex {
 		// We must include the entire state machine.
 		msg.AppendLogs.OriginIndex = l.Log.OriginIndex
+		msg.AppendLogs.OriginTerm = l.Log.OriginTerm
 		originState := l.Log.Origin.Clone()
 		msg.AppendLogs.Origin = &originState
 		msg.AppendLogs.Entries = append([]LogEntry[C]{}, l.Log.Entries...)
 	} else {
 		msg.AppendLogs.OriginIndex = logIndex
+		msg.AppendLogs.OriginTerm = msg.AppendLogs.Entries[logIndex-l.Log.OriginIndex].Term
 		msg.AppendLogs.Entries = append(
 			[]LogEntry[C]{},
-			msg.AppendLogs.Entries[int(logIndex-l.Log.OriginIndex):]...,
+			msg.AppendLogs.Entries[logIndex-l.Log.OriginIndex:]...,
 		)
 	}
 	return msg
 }
 
 func (l *Leader[C, S]) maybeAdvanceCommit() {
-	if term, _ := l.Log.LatestTermAndIndex(); term != l.Term {
-		// We can only safely commit if the latest log entry is
-		// from this term, otherwise this could be overwritten by
-		// another future leader.
-		return
-	}
-
 	sorted := append([]int64{}, l.followerLogIndices...)
 	sort.Slice(sorted, func(i int, j int) bool {
 		return sorted[i] < sorted[j]
@@ -168,8 +164,16 @@ func (l *Leader[C, S]) maybeAdvanceCommit() {
 	half := len(sorted) / 2
 	minCommit := sorted[half]
 
-	if minCommit > l.Log.CommitIndex {
-		oldCommit := l.Log.CommitIndex
+	if minCommit > l.Log.OriginIndex {
+		commitEntry := l.Log.Entries[minCommit-l.Log.OriginIndex]
+		if commitEntry.Term != l.Term {
+			// We can only safely commit log entries from the
+			// current term, and previous entries will be
+			// implicitly committed as a result.
+			return
+		}
+
+		oldCommit := l.Log.OriginIndex
 		results := l.Log.Commit(minCommit)
 
 		// Now that we have committed, we can send results to clients.
@@ -177,11 +181,12 @@ func (l *Leader[C, S]) maybeAdvanceCommit() {
 		for i, result := range results {
 			index := int64(i) + oldCommit
 			if cb, ok := l.callbacks[index]; ok {
+				resp := CommandResponse[C]{Result: result}
 				callbackMessages = append(callbackMessages, &simulator.Message{
 					Source:  l.Port,
 					Dest:    cb,
-					Message: result,
-					Size:    float64(result.Size()),
+					Message: resp,
+					Size:    float64(resp.Size()),
 				})
 				delete(l.callbacks, index)
 			}
@@ -190,4 +195,13 @@ func (l *Leader[C, S]) maybeAdvanceCommit() {
 
 		l.sendAppendLogsAndResetTimer()
 	}
+}
+
+func sourcePortIndex(msg *simulator.Message, ports []*simulator.Port) int {
+	for i, f := range ports {
+		if msg.Source == f {
+			return i
+		}
+	}
+	return -1
 }
