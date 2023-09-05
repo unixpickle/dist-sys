@@ -56,7 +56,7 @@ func testRaftSimpleCase(t *testing.T, numNodes int, randomized bool) {
 				Log: &Log[HashMapCommand, *HashMap]{
 					Origin: &HashMap{},
 				},
-				ElectionTimeout:   30 + float64(i),
+				ElectionTimeout:   30 + float64(index)*2,
 				HeartbeatInterval: 10,
 			}).RunLoop()
 		})

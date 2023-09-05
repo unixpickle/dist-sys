@@ -129,7 +129,7 @@ func (l *Leader[C, S]) sendAppendLogsAndResetTimer() {
 }
 
 func (l *Leader[C, S]) sendAppendLogs() {
-	messages := make([]*simulator.Message, len(l.Followers))
+	messages := make([]*simulator.Message, 0, len(l.Followers))
 	for i, port := range l.Followers {
 		msg := l.appendLogsForFollower(i)
 		messages = append(messages, &simulator.Message{
@@ -155,12 +155,19 @@ func (l *Leader[C, S]) appendLogsForFollower(i int) *RaftMessage[C, S] {
 		originState := l.Log.Origin.Clone()
 		msg.AppendLogs.Origin = &originState
 		msg.AppendLogs.Entries = append([]LogEntry[C]{}, l.Log.Entries...)
-	} else {
+	} else if logIndex > l.Log.OriginIndex {
 		msg.AppendLogs.OriginIndex = logIndex
-		msg.AppendLogs.OriginTerm = msg.AppendLogs.Entries[logIndex-l.Log.OriginIndex].Term
+		msg.AppendLogs.OriginTerm = msg.AppendLogs.Entries[logIndex-l.Log.OriginIndex-1].Term
 		msg.AppendLogs.Entries = append(
 			[]LogEntry[C]{},
 			msg.AppendLogs.Entries[logIndex-l.Log.OriginIndex:]...,
+		)
+	} else {
+		msg.AppendLogs.OriginIndex = l.Log.OriginIndex
+		msg.AppendLogs.OriginTerm = l.Log.OriginTerm
+		msg.AppendLogs.Entries = append(
+			[]LogEntry[C]{},
+			msg.AppendLogs.Entries[:]...,
 		)
 	}
 	return msg

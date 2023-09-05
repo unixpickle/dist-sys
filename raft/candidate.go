@@ -40,6 +40,8 @@ func (c *Candidate[C, S]) RunLoop() *simulator.Message {
 		c.Handle.Cancel(c.timer)
 	}()
 
+	c.broadcastCandidacy()
+
 	numVotes := 0
 	for {
 		result := c.Handle.Poll(c.timerStream, c.Port.Incoming)
