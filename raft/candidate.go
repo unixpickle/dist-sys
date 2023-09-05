@@ -32,9 +32,7 @@ func (c *Candidate[C, S]) RunLoop() *simulator.Message {
 	c.timer = c.Handle.Schedule(c.timerStream, nil, c.ElectionTimeout)
 
 	defer func() {
-		if c.timer != nil {
-			c.Handle.Cancel(c.timer)
-		}
+		c.Handle.Cancel(c.timer)
 	}()
 
 	numVotes := 0

@@ -45,7 +45,7 @@ func (f *Follower[C, S]) RunLoop(initialMessage *simulator.Message) {
 
 func (f *Follower[C, S]) handleMessage(rawMsg *simulator.Message) {
 	if sourcePortIndex(rawMsg, f.Others) == -1 {
-		f.handleCommand(rawMsg.Source, rawMsg.Message.(C))
+		f.handleCommand(rawMsg.Source, rawMsg.Message.(*CommandMessage[C]))
 		return
 	}
 
@@ -70,12 +70,12 @@ func (f *Follower[C, S]) resetTimer() {
 	f.timer = f.Handle.Schedule(f.timerStream, nil, f.ElectionTimeout)
 }
 
-func (f *Follower[C, S]) handleCommand(source *simulator.Port, command C) {
+func (f *Follower[C, S]) handleCommand(source *simulator.Port, msg *CommandMessage[C]) {
 	var leader *simulator.Node
 	if f.leader != nil {
 		leader = f.leader.Node
 	}
-	resp := CommandResponse[C]{
+	resp := &CommandResponse{
 		Redirect: leader,
 	}
 	f.Network.Send(f.Handle, &simulator.Message{

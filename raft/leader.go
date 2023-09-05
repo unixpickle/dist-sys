@@ -31,7 +31,8 @@ type Leader[C Command, S StateMachine[C, S]] struct {
 
 	// Maps log indices to client connections for sending state
 	// machine results back to clients.
-	callbacks map[int64]*simulator.Port
+	callbacks  map[int64]*simulator.Port
+	commandIDs map[int64]string
 }
 
 // RunLoop runs the leader loop until we stop being the
@@ -68,7 +69,7 @@ func (l *Leader[C, S]) RunLoop() *simulator.Message {
 func (l *Leader[C, S]) handleMessage(rawMessage *simulator.Message) bool {
 	followerIndex := sourcePortIndex(rawMessage, l.Followers)
 	if followerIndex == -1 {
-		command := rawMessage.Message.(C)
+		command := rawMessage.Message.(*CommandMessage[C])
 		l.handleCommand(rawMessage.Source, command)
 		return true
 	}
@@ -106,9 +107,10 @@ func (l *Leader[C, S]) handleMessage(rawMessage *simulator.Message) bool {
 	return true
 }
 
-func (l *Leader[C, S]) handleCommand(port *simulator.Port, command C) {
-	idx := l.Log.Append(l.Term, command)
+func (l *Leader[C, S]) handleCommand(port *simulator.Port, command *CommandMessage[C]) {
+	idx := l.Log.Append(l.Term, command.Command)
 	l.callbacks[idx] = port
+	l.commandIDs[idx] = command.ID
 	l.sendAppendLogsAndResetTimer()
 }
 
@@ -181,7 +183,7 @@ func (l *Leader[C, S]) maybeAdvanceCommit() {
 		for i, result := range results {
 			index := int64(i) + oldCommit
 			if cb, ok := l.callbacks[index]; ok {
-				resp := CommandResponse[C]{Result: result}
+				resp := &CommandResponse{Result: result, ID: l.commandIDs[index]}
 				callbackMessages = append(callbackMessages, &simulator.Message{
 					Source:  l.Port,
 					Dest:    cb,
@@ -189,6 +191,7 @@ func (l *Leader[C, S]) maybeAdvanceCommit() {
 					Size:    float64(resp.Size()),
 				})
 				delete(l.callbacks, index)
+				delete(l.commandIDs, index)
 			}
 		}
 		l.Network.Send(l.Handle, callbackMessages...)

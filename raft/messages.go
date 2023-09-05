@@ -109,12 +109,18 @@ func (v *VoteResponse) Size() int {
 	return 8 + 1
 }
 
-type CommandResponse[C Command] struct {
+type CommandMessage[C Command] struct {
+	Command C
+	ID      string
+}
+
+type CommandResponse struct {
+	ID       string
 	Result   Result          // non-nil if Redirect is None
 	Redirect *simulator.Node // non-nil if this is no longer the leader
 }
 
-func (c CommandResponse[C]) Size() int {
+func (c *CommandResponse) Size() int {
 	if c.Result != nil {
 		// Result size + header
 		return 1 + c.Result.Size()
