@@ -77,9 +77,20 @@ func testRaftSimpleCase(t *testing.T, numNodes int, randomized bool) {
 		}
 		for i := 0; i < 10; i++ {
 			value := "hello" + strconv.Itoa(i)
-			_, err := client.Send(HashMapCommand{Key: strconv.Itoa(i), Value: value}, 0)
+			x, err := client.Send(HashMapCommand{Key: strconv.Itoa(i), Value: value}, 0)
 			if err != nil {
-				panic(err)
+				t.Fatal(err)
+			} else if v := x.(StringResult).Value; v != value {
+				t.Fatalf("expected %#v but got %#v", v, x)
+			}
+			for j := 0; j <= i; j++ {
+				expected := "hello" + strconv.Itoa(i)
+				resp, err := client.Send(HashMapCommand{Key: strconv.Itoa(i)}, 0)
+				if err != nil {
+					t.Fatal(err)
+				} else if v := resp.(StringResult).Value; v != expected {
+					t.Fatalf("expected %#v but got %#v", expected, v)
+				}
 			}
 		}
 	})
