@@ -26,7 +26,11 @@ type Follower[C Command, S StateMachine[C, S]] struct {
 
 // RunLoop runs as a follower until there is a timeout, at
 // which point the node should enter the candidate phase.
-func (f *Follower[C, S]) RunLoop() {
+func (f *Follower[C, S]) RunLoop(initialMessage *simulator.Message) {
+	if initialMessage != nil {
+		f.handleMessage(initialMessage)
+	}
+
 	f.timerStream = f.Handle.Stream()
 	f.timer = f.Handle.Schedule(f.timerStream, nil, f.ElectionTimeout)
 
@@ -35,27 +39,29 @@ func (f *Follower[C, S]) RunLoop() {
 		if result.Stream == f.timerStream {
 			return
 		}
+		f.handleMessage(result.Message.(*simulator.Message))
+	}
+}
 
-		rawMsg := result.Message.(*simulator.Message)
-		if sourcePortIndex(rawMsg, f.Others) == -1 {
-			f.handleCommand(rawMsg.Source, rawMsg.Message.(C))
-			continue
-		}
+func (f *Follower[C, S]) handleMessage(rawMsg *simulator.Message) {
+	if sourcePortIndex(rawMsg, f.Others) == -1 {
+		f.handleCommand(rawMsg.Source, rawMsg.Message.(C))
+		return
+	}
 
-		msg := rawMsg.Message.(*RaftMessage[C, S])
-		if term := msg.Term(); term < f.Term {
-			continue
-		} else if term > f.Term {
-			f.currentVote = nil
-			f.leader = nil
-			f.Term = term
-		}
+	msg := rawMsg.Message.(*RaftMessage[C, S])
+	if term := msg.Term(); term < f.Term {
+		return
+	} else if term > f.Term {
+		f.currentVote = nil
+		f.leader = nil
+		f.Term = term
+	}
 
-		if msg.AppendLogs != nil {
-			f.handleAppendLogs(rawMsg.Source, msg.AppendLogs)
-		} else if msg.Vote != nil {
-			f.handleVote(rawMsg.Source, msg.Vote)
-		}
+	if msg.AppendLogs != nil {
+		f.handleAppendLogs(rawMsg.Source, msg.AppendLogs)
+	} else if msg.Vote != nil {
+		f.handleVote(rawMsg.Source, msg.Vote)
 	}
 }
 
