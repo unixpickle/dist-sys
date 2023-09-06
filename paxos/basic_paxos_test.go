@@ -34,7 +34,7 @@ func TestBasicOneProposer(t *testing.T) {
 		if value != "goodbye world" {
 			t.Errorf("unexpected value: %s", value)
 		}
-		for _ = range ports {
+		for range ports {
 			h.Schedule(doneStream, nil, 0)
 		}
 	})
@@ -88,7 +88,7 @@ func TestBasicSlowProposer(t *testing.T) {
 					if value != "goodbye world" {
 						t.Errorf("unexpected value: %s", value)
 					}
-					for _ = range ports {
+					for range ports {
 						h.Schedule(doneStream, nil, 0)
 					}
 				})
@@ -137,7 +137,7 @@ func TestBasicBackoff(t *testing.T) {
 		for i := 0; i < NumProposers; i++ {
 			h.Poll(proposerDones)
 		}
-		for _ = range ports {
+		for range ports {
 			h.Schedule(doneStream, nil, 0)
 		}
 	})

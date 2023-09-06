@@ -210,7 +210,7 @@ func testBatchedEquivalence(t *testing.T, loop *EventLoop, network Network, p1, 
 		for _, msg := range messages {
 			network.Send(h, msg)
 		}
-		for _ = range messages {
+		for range messages {
 			serialMessages = append(serialMessages, p2.Recv(h))
 			serialTimes = append(serialTimes, h.Time())
 		}

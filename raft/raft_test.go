@@ -258,6 +258,8 @@ func TestRaftCommitOlderTerm(t *testing.T) {
 		clientPort := env.Clients[0]
 
 		findLeader := func() *simulator.Port {
+			// Sniff the network until we can discern who the current
+			// leader is.
 			var result *simulator.Port
 			env.Network.Sniff(h, func(msg *simulator.Message) bool {
 				if rm, ok := msg.Message.(*RaftMessage[HashMapCommand, *HashMap]); ok {
@@ -274,6 +276,9 @@ func TestRaftCommitOlderTerm(t *testing.T) {
 		bumpLeaderToTerm := func(leaderPort *simulator.Port, term int64) {
 			// Send a bogus packet to the leader before it's disconnected
 			// so that it starts voting with very high terms.
+			//
+			// This helps guarantee that this node will be elected leader
+			// eventually once it comes back up.
 			msg := &RaftMessage[HashMapCommand, *HashMap]{
 				Vote: &Vote{Term: term},
 			}

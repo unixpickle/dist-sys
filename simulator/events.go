@@ -190,7 +190,7 @@ func (e *EventLoop) Run() error {
 		e.lock.Unlock()
 	}()
 
-	for _ = range e.notifyCh {
+	for range e.notifyCh {
 		if shouldContinue, err := e.step(); !shouldContinue {
 			return err
 		}
