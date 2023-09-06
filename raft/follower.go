@@ -102,12 +102,6 @@ func (f *Follower[C, S]) handleAppendLogs(source *simulator.Port, msg *AppendLog
 	f.resetTimer()
 	f.leader = source
 
-	lastIndex, lastTerm := f.Log.LatestTermAndIndex()
-	newIndex := msg.OriginIndex + int64(len(msg.Entries))
-	if lastTerm == msg.Term && lastIndex > newIndex {
-		panic("out-of-order message detected from the leader")
-	}
-
 	if msg.Origin != nil {
 		// This is the easy case: they are forcing our log to be
 		// in a particular state.
@@ -152,7 +146,7 @@ func (f *Follower[C, S]) handleAppendLogs(source *simulator.Port, msg *AppendLog
 		} else {
 			// The sender actually truncated our logs, meaning
 			// they do not have a commit as far as we do.
-			panic("this should not happen")
+			panic("truncated log before commit index")
 			// f.Log.Entries = []LogEntry[C]{}
 		}
 		resp.AppendLogsResponse.Success = true

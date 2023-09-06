@@ -239,8 +239,7 @@ func (l *Leader[C, S]) maybeAdvanceCommit() {
 	sort.Slice(sorted, func(i int, j int) bool {
 		return sorted[i] < sorted[j]
 	})
-	half := len(sorted) / 2
-	minCommit := sorted[half]
+	minCommit := sorted[len(sorted)/2]
 
 	if minCommit > l.Log.OriginIndex {
 		commitEntry := l.Log.Entries[minCommit-l.Log.OriginIndex-1]
