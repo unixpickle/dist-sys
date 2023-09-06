@@ -4,6 +4,8 @@ import (
 	"math"
 	"math/rand"
 	"sync"
+
+	"github.com/unixpickle/essentials"
 )
 
 // A Node represents a machine on a virtual network.
@@ -287,6 +289,7 @@ type OrderedNetwork struct {
 	lock      sync.Mutex
 	nextTimes map[*Node]float64
 	downNodes map[*Node]bool
+	timers    map[*Node][]*Timer
 }
 
 func NewOrderedNetwork(rate float64, maxRandomLatency float64) *OrderedNetwork {
@@ -295,6 +298,7 @@ func NewOrderedNetwork(rate float64, maxRandomLatency float64) *OrderedNetwork {
 		MaxRandomLatency: maxRandomLatency,
 		nextTimes:        map[*Node]float64{},
 		downNodes:        map[*Node]bool{},
+		timers:           map[*Node][]*Timer{},
 	}
 }
 
@@ -303,30 +307,78 @@ func (o *OrderedNetwork) Send(h *Handle, msgs ...*Message) {
 	o.lock.Lock()
 	defer o.lock.Unlock()
 
+	o.cleanupTimers(h)
+
 	curTime := h.Time()
 
 	for _, msg := range msgs {
+		src := msg.Source.Node
 		dest := msg.Dest.Node
-		if sourceDown, _ := o.downNodes[msg.Source.Node]; sourceDown {
-			continue
-		}
-		if destDown, _ := o.downNodes[dest]; destDown {
+		if o.downNodes[src] || o.downNodes[dest] {
 			continue
 		}
 		latency := rand.Float64() * o.MaxRandomLatency
 		delay := latency + msg.Size/o.Rate
+
+		var timer *Timer
 		if t, ok := o.nextTimes[dest]; !ok || t <= curTime {
-			h.Schedule(msg.Dest.Incoming, msg, delay)
+			timer = h.Schedule(msg.Dest.Incoming, msg, delay)
 			o.nextTimes[dest] = curTime + delay
 		} else {
-			h.Schedule(msg.Dest.Incoming, msg, delay+(t-curTime))
+			timer = h.Schedule(msg.Dest.Incoming, msg, delay+(t-curTime))
 			o.nextTimes[dest] = delay + t
 		}
+		o.timers[dest] = append(o.timers[dest], timer)
+		o.timers[src] = append(o.timers[src], timer)
 	}
 }
 
-func (o *OrderedNetwork) SetDown(node *Node, down bool) {
+func (o *OrderedNetwork) cleanupTimers(h *Handle) {
+	time := h.Time()
+	o.filterTimer(h, func(t *Timer) bool {
+		return t.Time() >= time
+	})
+}
+
+func (o *OrderedNetwork) SetDown(h *Handle, node *Node, down bool) {
 	o.lock.Lock()
 	defer o.lock.Unlock()
+
 	o.downNodes[node] = down
+
+	if !down {
+		return
+	}
+
+	delete(o.nextTimes, node)
+
+	// Kill all active messages to and from the node.
+	o.cleanupTimers(h)
+	timers := o.timers[node]
+	canceled := map[*Timer]bool{}
+	for _, t := range timers {
+		canceled[t] = true
+		h.Cancel(t)
+	}
+	delete(o.timers, node)
+	o.filterTimer(h, func(t *Timer) bool {
+		return !canceled[t]
+	})
+}
+
+func (o *OrderedNetwork) filterTimer(h *Handle, f func(t *Timer) bool) {
+	var keys []*Node
+	for k := range o.timers {
+		keys = append(keys, k)
+	}
+	for _, k := range keys {
+		timers := o.timers[k]
+		for i := 0; i < len(timers); i++ {
+			if !f(timers[i]) {
+				essentials.UnorderedDelete(&timers, i)
+				i--
+			}
+		}
+		o.timers[k] = timers
+	}
 }
