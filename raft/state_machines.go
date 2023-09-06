@@ -1,5 +1,8 @@
 package raft
 
+// HashMapCommand is a command for a *HashMap.
+//
+// If Value is an empty string, this is a get command.
 type HashMapCommand struct {
 	Key   string
 	Value string
@@ -9,6 +12,8 @@ func (h HashMapCommand) Size() int {
 	return 2 + len(h.Key) + len(h.Value)
 }
 
+// StringResult is a Result type from a HashMap containing
+// a value stored at a given key.
 type StringResult struct {
 	Value string
 }
@@ -17,6 +22,8 @@ func (s StringResult) Size() int {
 	return len(s.Value)
 }
 
+// HashMap is a state machine which takes HashMapCommands
+// and either sets or gets map values.
 type HashMap struct {
 	mapping map[string]string
 }
