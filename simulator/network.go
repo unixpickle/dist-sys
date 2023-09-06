@@ -403,12 +403,12 @@ func (o *OrderedNetwork) SetDown(h *Handle, node *Node, down bool) {
 	// Kill all active messages to and from the node.
 	o.cleanupTimers(h)
 	timers := o.timers[node]
+	delete(o.timers, node)
 	canceled := map[*Timer]bool{}
 	for _, t := range timers {
 		canceled[t] = true
 		h.Cancel(t)
 	}
-	delete(o.timers, node)
 	o.filterTimer(h, func(t *Timer) bool {
 		return !canceled[t]
 	})

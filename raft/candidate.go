@@ -51,6 +51,7 @@ func (c *Candidate[C, S]) RunLoop() *simulator.Message {
 		default:
 		}
 		if result.Stream == c.timerStream {
+			numVotes = 0
 			c.Term++
 			c.timer = c.Handle.Schedule(c.timerStream, nil, c.ElectionTimeout)
 			c.broadcastCandidacy()

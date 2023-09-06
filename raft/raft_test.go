@@ -180,73 +180,76 @@ func testRaftMultiClientNodeFailures(t *testing.T, numNodes int, randomized bool
 }
 
 func TestRaftMultiClientInterleavedNodeFailures(t *testing.T) {
-	env := NewRaftEnvironment(5, 2, true)
+	// Catch non-deterministic failure
+	for i := 0; i < 20; i++ {
+		env := NewRaftEnvironment(5, 2, true)
 
-	// Increase random latency to cause splits / partial sends.
-	env.Network.MaxRandomLatency = 1.0
+		// Increase random latency to cause splits / partial sends.
+		env.Network.MaxRandomLatency = 1.0
 
-	var wg sync.WaitGroup
-	for i, port := range env.Clients {
-		wg.Add(1)
-		keyPrefix := fmt.Sprintf("rank%d-", i)
-		env.Loop.Go(func(h *simulator.Handle) {
-			defer wg.Done()
-			client := &Client[HashMapCommand]{
-				Handle:  h,
-				Network: env.Network,
-				Port:    port,
-				Servers: env.Servers,
+		var wg sync.WaitGroup
+		for i, port := range env.Clients {
+			wg.Add(1)
+			keyPrefix := fmt.Sprintf("rank%d-", i)
+			env.Loop.Go(func(h *simulator.Handle) {
+				defer wg.Done()
+				client := &Client[HashMapCommand]{
+					Handle:  h,
+					Network: env.Network,
+					Port:    port,
+					Servers: env.Servers,
 
-				// With lower values, servers seem to get overloaded.
-				SendTimeout: 30,
-			}
-			for i := 0; i < 50; i++ {
-				value := "hello" + strconv.Itoa(i)
-				x, err := client.Send(HashMapCommand{Key: keyPrefix + strconv.Itoa(i), Value: value}, 0)
-				if err != nil {
-					t.Fatal(err)
-				} else if v := x.(StringResult).Value; v != value {
-					t.Fatalf("expected %#v but got %#v", v, x)
+					// With lower values, servers seem to get overloaded.
+					SendTimeout: 30,
 				}
-				for j := 0; j <= i; j++ {
-					expected := "hello" + strconv.Itoa(i)
-					resp, err := client.Send(HashMapCommand{Key: keyPrefix + strconv.Itoa(i)}, 0)
+				for i := 0; i < 20; i++ {
+					value := "hello" + strconv.Itoa(i)
+					x, err := client.Send(HashMapCommand{Key: keyPrefix + strconv.Itoa(i), Value: value}, 0)
 					if err != nil {
 						t.Fatal(err)
-					} else if v := resp.(StringResult).Value; v != expected {
-						t.Fatalf("expected %#v but got %#v", expected, v)
+					} else if v := x.(StringResult).Value; v != value {
+						t.Fatalf("expected %#v but got %#v", v, x)
+					}
+					for j := 0; j <= i; j++ {
+						expected := "hello" + strconv.Itoa(i)
+						resp, err := client.Send(HashMapCommand{Key: keyPrefix + strconv.Itoa(i)}, 0)
+						if err != nil {
+							t.Fatal(err)
+						} else if v := resp.(StringResult).Value; v != expected {
+							t.Fatalf("expected %#v but got %#v", expected, v)
+						}
+						h.Sleep(rand.Float64()*5 + 5)
 					}
 				}
-				h.Sleep(rand.Float64() * 10)
-			}
-		})
-	}
+			})
+		}
 
-	// Randomly bring down at most two servers at once.
-	for i := 0; i < 2; i++ {
-		env.Loop.Go(func(h *simulator.Handle) {
-			for {
-				select {
-				case <-env.Context.Done():
-					return
-				default:
+		// Randomly bring down at most two servers at once.
+		for i := 0; i < 2; i++ {
+			env.Loop.Go(func(h *simulator.Handle) {
+				for {
+					select {
+					case <-env.Context.Done():
+						return
+					default:
+					}
+					h.Sleep(rand.Float64() * 30)
+					node := rand.Intn(len(env.Servers))
+					env.Network.SetDown(h, env.Servers[node].Node, true)
+					h.Sleep(rand.Float64() * 120)
+					env.Network.SetDown(h, env.Servers[node].Node, false)
+					h.Sleep(rand.Float64()*60 + 120)
 				}
-				h.Sleep(rand.Float64() * 30)
-				node := rand.Intn(len(env.Servers))
-				env.Network.SetDown(h, env.Servers[node].Node, true)
-				h.Sleep(rand.Float64() * 120)
-				env.Network.SetDown(h, env.Servers[node].Node, false)
-				h.Sleep(rand.Float64()*60 + 60)
-			}
-		})
+			})
+		}
+
+		go func() {
+			wg.Wait()
+			env.Cancel()
+		}()
+
+		env.Loop.MustRun()
 	}
-
-	go func() {
-		wg.Wait()
-		env.Cancel()
-	}()
-
-	env.Loop.MustRun()
 }
 
 func TestRaftCommitOlderTerm(t *testing.T) {
