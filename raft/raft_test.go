@@ -249,6 +249,135 @@ func TestRaftMultiClientInterleavedNodeFailures(t *testing.T) {
 	env.Loop.MustRun()
 }
 
+func TestRaftCommitOlderTerm(t *testing.T) {
+	env := NewRaftEnvironment(5, 1, false)
+
+	env.Loop.Go(func(h *simulator.Handle) {
+		defer env.Cancel()
+
+		clientPort := env.Clients[0]
+
+		findLeader := func() *simulator.Port {
+			var result *simulator.Port
+			env.Network.Sniff(h, func(msg *simulator.Message) bool {
+				if rm, ok := msg.Message.(*RaftMessage[HashMapCommand, *HashMap]); ok {
+					if rm.AppendLogs != nil {
+						result = msg.Source
+						return false
+					}
+				}
+				return true
+			})
+			return result
+		}
+
+		bumpLeaderToTerm := func(leaderPort *simulator.Port, term int64) {
+			// Send a bogus packet to the leader before it's disconnected
+			// so that it starts voting with very high terms.
+			msg := &RaftMessage[HashMapCommand, *HashMap]{
+				Vote: &Vote{Term: term},
+			}
+			var follower *simulator.Port
+			for _, port := range env.Servers {
+				if port != leaderPort && !env.Network.IsDown(port.Node) {
+					follower = port
+					break
+				}
+			}
+			env.Network.SendInstantly(h, &simulator.Message{
+				Source:  follower,
+				Dest:    leaderPort,
+				Message: msg,
+				Size:    float64(msg.Size()),
+			})
+			env.Network.SendInstantly(h)
+		}
+
+		// Wait until a leader is almost certainly alive.
+		h.Sleep(120)
+
+		leader := findLeader()
+
+		msg := &CommandMessage[HashMapCommand]{
+			Command: HashMapCommand{Key: "key1", Value: "value1"},
+			ID:      "id1",
+		}
+		env.Network.SendInstantly(h, &simulator.Message{
+			Source:  clientPort,
+			Dest:    leader,
+			Message: msg,
+			Size:    float64(msg.Command.Size() + len(msg.ID)),
+		})
+		h.Sleep(1e-8)
+		// Make sure leader will win next election.
+		bumpLeaderToTerm(leader, 10)
+		h.Sleep(1e-8)
+		env.Network.SetDown(h, leader.Node, true)
+
+		// A new leader should exist which doesn't know about our
+		// previous log entry.
+		h.Sleep(120)
+		newLeader := findLeader()
+
+		// Same deal: give them an entry only they know about.
+		msg = &CommandMessage[HashMapCommand]{
+			Command: HashMapCommand{Key: "key2", Value: "value2"},
+			ID:      "id2",
+		}
+		env.Network.SendInstantly(h, &simulator.Message{
+			Source:  clientPort,
+			Dest:    newLeader,
+			Message: msg,
+			Size:    float64(msg.Command.Size() + len(msg.ID)),
+		})
+		h.Sleep(1e-8)
+		bumpLeaderToTerm(newLeader, 100)
+		h.Sleep(1e-8)
+		env.Network.SetDown(h, newLeader.Node, true)
+		env.Network.SetDown(h, leader.Node, false)
+
+		// Give original leader a chance to erroneously commit
+		// if it is incorrectly implemented.
+		h.Sleep(120)
+		newNewLeader := findLeader()
+		if newNewLeader != leader {
+			t.Fatal("expected to obtain original leader")
+		}
+
+		// Bring back up the second leader.
+		env.Network.SetDown(h, newLeader.Node, false)
+		env.Network.SetDown(h, leader.Node, true)
+
+		h.Sleep(120)
+		newNewNewLeader := findLeader()
+		if newNewNewLeader != newLeader {
+			t.Fatal("unexpected leader after long downtime (second leader)")
+		}
+
+		// Make sure the key from newLeader is committed
+		// and not the previous one.
+		client := &Client[HashMapCommand]{
+			Handle:  h,
+			Network: env.Network,
+			Port:    clientPort,
+			Servers: env.Servers,
+
+			// With lower values, servers seem to get overloaded.
+			SendTimeout: 30,
+		}
+		res, _ := client.Send(HashMapCommand{Key: "key1"}, 0)
+		if res.(StringResult).Value != "" {
+			t.Fatalf("unexpected key1 value: %#v", res)
+		}
+		res, _ = client.Send(HashMapCommand{Key: "key2"}, 0)
+		if res.(StringResult).Value != "value2" {
+			t.Fatalf("unexpected key2 value: %#v", res)
+		}
+	})
+
+	env.Loop.MustRun()
+}
+
 type RaftEnvironment struct {
 	Cancel  func()
 	Context context.Context

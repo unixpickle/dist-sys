@@ -290,6 +290,8 @@ type OrderedNetwork struct {
 	nextTimes map[*Node]float64
 	downNodes map[*Node]bool
 	timers    map[*Node][]*Timer
+
+	sniffers map[*EventStream]struct{}
 }
 
 func NewOrderedNetwork(rate float64, maxRandomLatency float64) *OrderedNetwork {
@@ -299,6 +301,7 @@ func NewOrderedNetwork(rate float64, maxRandomLatency float64) *OrderedNetwork {
 		nextTimes:        map[*Node]float64{},
 		downNodes:        map[*Node]bool{},
 		timers:           map[*Node][]*Timer{},
+		sniffers:         map[*EventStream]struct{}{},
 	}
 }
 
@@ -317,6 +320,9 @@ func (o *OrderedNetwork) Send(h *Handle, msgs ...*Message) {
 		if o.downNodes[src] || o.downNodes[dest] {
 			continue
 		}
+		for sniffer := range o.sniffers {
+			h.Schedule(sniffer, msg, 0)
+		}
 		latency := rand.Float64() * o.MaxRandomLatency
 		delay := latency + msg.Size/o.Rate
 
@@ -330,6 +336,48 @@ func (o *OrderedNetwork) Send(h *Handle, msgs ...*Message) {
 		}
 		o.timers[dest] = append(o.timers[dest], timer)
 		o.timers[src] = append(o.timers[src], timer)
+	}
+}
+
+// SendInstantly is like Send, but it ignores scheduling to
+// ensure the message arrives at the destination in zero
+// time.
+//
+// This method still avoids sending to down nodes.
+func (o *OrderedNetwork) SendInstantly(h *Handle, msgs ...*Message) {
+	o.lock.Lock()
+	defer o.lock.Unlock()
+
+	for _, msg := range msgs {
+		src := msg.Source.Node
+		dest := msg.Dest.Node
+		if o.downNodes[src] || o.downNodes[dest] {
+			continue
+		}
+		h.Schedule(msg.Dest.Incoming, msg, 0)
+	}
+}
+
+// Sniff repeatedly calls f with all messages sent on the
+// network until f returns false.
+func (o *OrderedNetwork) Sniff(h *Handle, f func(*Message) bool) {
+	stream := h.Stream()
+
+	o.lock.Lock()
+	o.sniffers[stream] = struct{}{}
+	o.lock.Unlock()
+
+	defer func() {
+		o.lock.Lock()
+		delete(o.sniffers, stream)
+		o.lock.Unlock()
+	}()
+
+	for {
+		event := h.Poll(stream)
+		if !f(event.Message.(*Message)) {
+			break
+		}
 	}
 }
 
@@ -364,6 +412,12 @@ func (o *OrderedNetwork) SetDown(h *Handle, node *Node, down bool) {
 	o.filterTimer(h, func(t *Timer) bool {
 		return !canceled[t]
 	})
+}
+
+func (o *OrderedNetwork) IsDown(n *Node) bool {
+	o.lock.Lock()
+	defer o.lock.Unlock()
+	return o.downNodes[n]
 }
 
 func (o *OrderedNetwork) filterTimer(h *Handle, f func(t *Timer) bool) {
