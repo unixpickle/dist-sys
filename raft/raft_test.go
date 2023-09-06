@@ -354,8 +354,8 @@ func TestRaftCommitOlderTerm(t *testing.T) {
 			t.Fatal("unexpected leader after long downtime (second leader)")
 		}
 
-		// Make sure the key from newLeader is committed
-		// and not the previous one.
+		// Add another key to the second leader to force it
+		// to commit.
 		client := &Client[HashMapCommand]{
 			Handle:  h,
 			Network: env.Network,
@@ -365,13 +365,28 @@ func TestRaftCommitOlderTerm(t *testing.T) {
 			// With lower values, servers seem to get overloaded.
 			SendTimeout: 30,
 		}
+		client.Send(HashMapCommand{Key: "key3", Value: "value3"}, 0)
+
+		// Now we will use the cluster of the three nodes
+		// were never sent data directly as followers.
+		// This will tell us what state they have
+		// internally.
+		env.Network.SetDown(h, newLeader.Node, true)
+		h.Sleep(120)
+
+		// Make sure the key from newLeader is committed
+		// and not the previous one.
 		res, _ := client.Send(HashMapCommand{Key: "key1"}, 0)
 		if res.(StringResult).Value != "" {
-			t.Fatalf("unexpected key1 value: %#v", res)
+			t.Errorf("unexpected key1 value: %#v", res)
 		}
 		res, _ = client.Send(HashMapCommand{Key: "key2"}, 0)
 		if res.(StringResult).Value != "value2" {
-			t.Fatalf("unexpected key2 value: %#v", res)
+			t.Errorf("unexpected key2 value: %#v", res)
+		}
+		res, _ = client.Send(HashMapCommand{Key: "key3"}, 0)
+		if res.(StringResult).Value != "value3" {
+			t.Errorf("unexpected key3 value: %#v", res)
 		}
 	})
 
