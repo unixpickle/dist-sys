@@ -56,6 +56,7 @@ func (r *Raft[C, S]) RunLoop() {
 			ElectionTimeout: r.ElectionTimeout,
 		}
 		followerMsg = c.RunLoop()
+		r.Term = c.Term
 		select {
 		case <-r.Context.Done():
 			return
